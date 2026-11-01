@@ -14,7 +14,7 @@ import com.example.timelog.data.seed.DefaultCategories
 
 @Database(
     entities = [CategoryEntity::class, EventEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "time-log.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(SeedCallback())
                 .build()
 
@@ -72,6 +72,27 @@ abstract class AppDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_event_categoryId ON event(categoryId)",
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_event_startAt ON event(startAt)")
+            }
+        }
+
+        /**
+         * v3 只调整默认分类的展示顺序：工作下「沟通」排在「执行」前，娱乐下「沉浸」排在「社交」前。
+         * 只改默认种子的 4 个固定 ID，且要求名称仍是默认值，避免覆盖用户改过的分类。
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "UPDATE category SET sortOrder = 1 WHERE id = 11 AND name = '执行'",
+                )
+                db.execSQL(
+                    "UPDATE category SET sortOrder = 0 WHERE id = 12 AND name = '沟通'",
+                )
+                db.execSQL(
+                    "UPDATE category SET sortOrder = 1 WHERE id = 41 AND name = '社交'",
+                )
+                db.execSQL(
+                    "UPDATE category SET sortOrder = 0 WHERE id = 42 AND name = '沉浸'",
+                )
             }
         }
 
