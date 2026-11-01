@@ -70,7 +70,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
     when (screen) {
         AppScreen.Home -> HomeScreen(
             state = homeState,
-            onRecord = homeViewModel::openNewRecord,
+            onNewRecord = homeViewModel::openNewRecord,
             onOpenCategories = { screen = AppScreen.Categories },
             onEventClick = homeViewModel::openEditRecord,
             onEventLongClick = homeViewModel::requestDelete,
@@ -99,12 +99,12 @@ private fun TimeLogApp(repository: TimeLogRepository) {
         RecordSheet(
             state = recordState,
             onDismiss = homeViewModel::closeRecord,
-            onTitleChange = recordViewModel::onTitleChange,
             onNoteChange = recordViewModel::onNoteChange,
             onCategorySelected = recordViewModel::onCategorySelected,
-            onCategoryExpanded = recordViewModel::onCategoryExpanded,
-            onDateSelected = recordViewModel::onDateSelected,
-            onTimeSelected = recordViewModel::onTimeSelected,
+            onStartDateSelected = recordViewModel::onStartDateSelected,
+            onStartTimeSelected = recordViewModel::onStartTimeSelected,
+            onEndDateSelected = recordViewModel::onEndDateSelected,
+            onEndTimeSelected = recordViewModel::onEndTimeSelected,
             onSave = recordViewModel::save,
         )
     }

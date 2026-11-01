@@ -1,5 +1,6 @@
 package com.example.timelog.ui.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,11 +13,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.AlertDialog
@@ -25,201 +26,249 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.timelog.domain.model.TimelineEvent
+import com.example.timelog.ui.theme.Clay
+import com.example.timelog.util.DateTimeFormat
 
 @Composable
 fun HomeScreen(
     state: HomeUiState,
-    onRecord: () -> Unit,
+    onNewRecord: () -> Unit,
     onOpenCategories: () -> Unit,
     onEventClick: (Long) -> Unit,
-    onEventLongClick: (TimelineEvent) -> Unit,
+    onEventLongClick: (Long) -> Unit,
     onDismissDelete: () -> Unit,
     onConfirmDelete: () -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            HomeHeader(totalCount = state.totalCount, onOpenCategories = onOpenCategories)
-        },
-        bottomBar = {
-            RecordBar(onRecord = onRecord)
-        },
-    ) { innerPadding ->
-        when {
-            state.isLoading -> Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            )
-
-            state.days.isEmpty() -> EmptyTimeline(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            )
-
-            else -> TimelineList(
-                days = state.days,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                onEventClick = onEventClick,
-                onEventLongClick = onEventLongClick,
-            )
+        topBar = { HomeHeader(onOpenCategories = onOpenCategories) },
+        bottomBar = { RecordBar(onNewRecord = onNewRecord) },
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            when {
+                state.isLoading -> Unit
+                state.days.isEmpty() -> EmptyTimeline()
+                else -> TimelineList(
+                    days = state.days,
+                    onEventClick = onEventClick,
+                    onEventLongClick = onEventLongClick,
+                )
+            }
         }
     }
 
-    val pendingDelete = state.pendingDelete
-    if (pendingDelete != null) {
+    state.pendingDelete?.let { pending ->
         AlertDialog(
             onDismissRequest = onDismissDelete,
-            title = { Text("删除这条记录？") },
+            title = { Text("删除这段记录？") },
             text = {
-                Text("「${pendingDelete.event.title}」将被永久删除，无法恢复。")
+                Column {
+                    Text(
+                        "「${pending.categoryPath}」" +
+                            DateTimeFormat.rangeText(pending.event.startAt, pending.event.endAt),
+                    )
+                    pending.event.note?.let { note ->
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             },
             confirmButton = {
-                TextButton(
-                    onClick = onConfirmDelete,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text("删除")
+                TextButton(onClick = onConfirmDelete) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = onDismissDelete) {
-                    Text("取消")
-                }
+                TextButton(onClick = onDismissDelete) { Text("取消") }
             },
         )
     }
 }
 
 @Composable
-private fun HomeHeader(totalCount: Int, onOpenCategories: () -> Unit) {
-    Column(
+private fun HomeHeader(onOpenCategories: () -> Unit) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 24.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "时间流",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (totalCount == 0) "把发生的事，按时间排好" else "共 $totalCount 条记录",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            TextButton(onClick = onOpenCategories) {
-                Text("分类")
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecordBar(onRecord: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.background) {
-        Button(
-            onClick = onRecord,
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 12.dp)
-                .height(56.dp),
-            shape = CircleShape,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "完成",
-                style = MaterialTheme.typography.titleMedium,
-            )
-        }
-    }
-}
-
-@Composable
-private fun EmptyTimeline(modifier: Modifier = Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Text(
-            text = "还没有记录。\n点下方的「完成」记下第一件事。",
+            text = "時計",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = onOpenCategories) {
+            Text("分类", color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun RecordBar(onNewRecord: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+    ) {
+        Button(
+            onClick = onNewRecord,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("完成", style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun EmptyTimeline() {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 36.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = "还没有记录。",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "点下方的「完成」，记下刚刚做完的事。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 40.dp),
         )
     }
 }
 
 @Composable
 private fun TimelineList(
-    days: List<TimelineDay>,
-    modifier: Modifier = Modifier,
+    days: List<HomeDay>,
     onEventClick: (Long) -> Unit,
-    onEventLongClick: (TimelineEvent) -> Unit,
+    onEventLongClick: (Long) -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    val itemCount = days.size + days.sumOf { it.segments.size } + days.count { it.isToday }
+    // 倒序改成正序后，最新的记录在列表底部，靠近「完成」键；第一次打开与新增记录后都停在底部。
+    val lastRecordedAt = remember(days) {
+        days.flatMap { it.segments }.filterNot { it.isUnrecorded }
+            .maxOfOrNull { it.endAt } ?: 0L
+    }
+    var hasPositioned by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(lastRecordedAt, itemCount) {
+        if (itemCount == 0) return@LaunchedEffect
+        if (!hasPositioned) {
+            listState.scrollToItem(itemCount - 1)
+            hasPositioned = true
+        } else if (lastRecordedAt > 0L) {
+            listState.animateScrollToItem(itemCount - 1)
+        }
+    }
+
     LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(bottom = 16.dp),
+        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        contentPadding = PaddingValues(top = 10.dp, bottom = 16.dp),
     ) {
         days.forEach { day ->
             item(key = "day-${day.date}") {
                 DayHeader(day = day)
             }
-            items(items = day.events, key = { it.event.id }) { event ->
-                TimelineItem(
-                    item = event,
-                    onClick = { onEventClick(event.event.id) },
-                    onLongClick = { onEventLongClick(event) },
+            items(
+                items = day.segments,
+                key = { segment ->
+                    "seg-${day.date}-${segment.startAt}-" +
+                        segment.events.joinToString(",") { it.event.id.toString() }
+                },
+            ) { segment ->
+                val single = segment.events.singleOrNull()
+                TimelineSegmentRow(
+                    segment = segment,
+                    onClick = single?.let { event -> { onEventClick(event.event.id) } },
+                    onLongClick = single?.let { event -> { onEventLongClick(event.event.id) } },
                 )
+            }
+            if (day.isToday) {
+                item(key = "now-${day.date}") {
+                    NowMarker()
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DayHeader(day: TimelineDay) {
+private fun DayHeader(day: HomeDay) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 4.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 6.dp),
         verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = day.title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
+        Spacer(Modifier.width(10.dp))
         Text(
             text = day.subtitle,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 2.dp),
+            fontWeight = FontWeight.Normal,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun NowMarker() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(modifier = Modifier.width(44.dp), contentAlignment = Alignment.CenterEnd) {
+            Text(
+                text = "现在",
+                style = MaterialTheme.typography.labelSmall,
+                color = Clay,
+                modifier = Modifier.padding(end = 2.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
         )
     }
 }

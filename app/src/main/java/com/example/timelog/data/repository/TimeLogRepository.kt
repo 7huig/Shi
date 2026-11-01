@@ -39,20 +39,24 @@ class TimeLogRepository(private val database: AppDatabase) {
 
     suspend fun getEvent(id: Long): Event? = eventDao.getById(id)?.toDomain()
 
+    suspend fun latestEventEnd(): Long = eventDao.latestEnd()
+
     suspend fun saveEvent(
         id: Long?,
-        title: String,
         note: String?,
-        timestamp: Long,
+        startAt: Long,
+        endAt: Long,
         categoryId: Long,
     ) {
         val now = System.currentTimeMillis()
+        val cleanNote = note?.trim()?.ifEmpty { null }
+        val safeEndAt = endAt.coerceAtLeast(startAt + 60_000L)
         if (id == null) {
             eventDao.insert(
                 EventEntity(
-                    title = title.trim(),
-                    note = note?.trim()?.ifEmpty { null },
-                    timestamp = timestamp,
+                    note = cleanNote,
+                    startAt = startAt,
+                    endAt = safeEndAt,
                     categoryId = categoryId,
                     createdAt = now,
                     updatedAt = now,
@@ -62,9 +66,9 @@ class TimeLogRepository(private val database: AppDatabase) {
             val existing = eventDao.getById(id) ?: return
             eventDao.update(
                 existing.copy(
-                    title = title.trim(),
-                    note = note?.trim()?.ifEmpty { null },
-                    timestamp = timestamp,
+                    note = cleanNote,
+                    startAt = startAt,
+                    endAt = safeEndAt,
                     categoryId = categoryId,
                     updatedAt = now,
                 ),
@@ -134,9 +138,9 @@ class TimeLogRepository(private val database: AppDatabase) {
 
     private fun EventEntity.toDomain(): Event = Event(
         id = id,
-        title = title,
         note = note,
-        timestamp = timestamp,
+        startAt = startAt,
+        endAt = endAt,
         categoryId = categoryId,
         createdAt = createdAt,
         updatedAt = updatedAt,

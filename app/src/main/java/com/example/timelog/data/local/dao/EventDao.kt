@@ -9,11 +9,14 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface EventDao {
-    @Query("SELECT * FROM event ORDER BY timestamp DESC, id DESC")
+    @Query("SELECT * FROM event ORDER BY startAt ASC, id ASC")
     fun observeAll(): Flow<List<EventEntity>>
 
     @Query("SELECT * FROM event WHERE id = :id")
     suspend fun getById(id: Long): EventEntity?
+
+    @Query("SELECT COALESCE(MAX(endAt), 0) FROM event")
+    suspend fun latestEnd(): Long
 
     @Insert
     suspend fun insert(event: EventEntity): Long

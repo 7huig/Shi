@@ -1,0 +1,45 @@
+# 時計 · Launcher icon concepts
+
+Five directions for the 時計 (time-log) launcher icon — washi paper, ink, pine, clay.
+Flat vector, no gradients/shadows. Masters rendered at 4× and LANCZOS-downscaled to 512 px.
+Key content stays inside the Android adaptive icon 66 % safe zone (338 px of 512).
+
+**Start here → `overview.png`** (A–E on a light neutral ground, plus a 96 px home-screen check row).
+
+## Concepts
+
+| # | 名称 | Idea | Rationale |
+|---|------|------|-----------|
+| A | 墨時 | 「時」 monogram | A pine field with a paper-white 時 in Yu Mincho. The app logs time by the character "time" itself — no clock needed. |
+| B | 素時計 | Minimal clock | A 12 px ink ring with two hands and a clay second hand. The quietest possible clock; the clay hand is the only warm note. |
+| C | 時流 | Timeline blocks | Three rounded event blocks (pine / clay / ochre) at different heights — the app's day log reduced to a rhythm. |
+| D | 朱印 | Hanko seal | A clay seal square with a paper 時 and a carved inner keyline. Time logged = a stamp pressed on the day. |
+| E | 日月弧 | Sun-to-moon arc | A thin ink arc from an ink moon dot to a clay sun dot on pine-soft. A whole day as one restrained arc. |
+
+Pick one and the master 512 px file is ready for adaptive-icon export (foreground/background split or full-bleed).
+
+## Files
+
+- `icon-A.png` … `icon-E.png` — 512×512 full-bleed square masters
+- `icon-A-round.png` … `icon-E-round.png` — 512×512 circular-mask previews (transparent outside the circle)
+- `overview.png` — 1720×860 contact sheet, labelled A–E + 96 px legibility row
+- `render.py` — reproducible Pillow renderer (4× supersampling, LANCZOS)
+
+## Palette
+
+| token | hex |
+|-------|-----|
+| paper | #FBFAF7 |
+| ink | #1E211F |
+| pine | #2F5D50 |
+| pine-soft | #E6EFEA |
+| clay | #B4654A |
+| hairline | #E4E1DA |
+| ochre (category) | #C07A2B |
+| category blue (unused) | #3D6BDB |
+| category green (unused) | #2F8F5B |
+| category purple (unused) | #8A63C9 |
+
+Type: 時 is Yu Mincho Demibold in A and the overview captions, Microsoft YaHei Bold in the D seal.
+E's ground is pine-soft so the set reads as a family without using the paper field five times.
+C's ochre is the category ochre #C07A2B, the only category colour used here.

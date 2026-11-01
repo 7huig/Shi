@@ -22,14 +22,14 @@ import kotlinx.coroutines.launch
 data class RecordUiState(
     val isEditing: Boolean = false,
     val eventId: Long? = null,
-    val title: String = "",
     val note: String = "",
-    val date: LocalDate = LocalDate.now(DateTimeFormat.zone()),
-    val time: LocalTime = LocalTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0),
+    val startDate: LocalDate = LocalDate.now(DateTimeFormat.zone()),
+    val startTime: LocalTime = LocalTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0),
+    val endDate: LocalDate = LocalDate.now(DateTimeFormat.zone()),
+    val endTime: LocalTime = LocalTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0),
     val tree: CategoryTree = CategoryTree(),
     val selectedCategoryId: Long? = null,
-    val expandedIds: Set<Long> = emptySet(),
-    val titleError: Boolean = false,
+    val timeError: Boolean = false,
     val isSaving: Boolean = false,
     val saved: Boolean = false,
 )
@@ -46,12 +46,8 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
             repository.categoryTree.collect { tree ->
                 _uiState.update { state ->
                     val stillValid = state.selectedCategoryId?.takeIf { tree.find(it) != null }
-                    val selected = stillValid ?: tree.flatten().firstOrNull()?.first?.category?.id
-                    state.copy(
-                        tree = tree,
-                        selectedCategoryId = selected,
-                        expandedIds = state.expandedIds + tree.ancestorIds(selected ?: -1),
-                    )
+                    val selected = stillValid ?: defaultCategoryId(tree)
+                    state.copy(tree = tree, selectedCategoryId = selected)
                 }
             }
         }
@@ -59,45 +55,68 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
     fun start(target: EditorTarget) {
         loadJob?.cancel()
-        _uiState.update { it.copy(isSaving = false, saved = false, titleError = false) }
+        _uiState.update { it.copy(isSaving = false, saved = false, timeError = false) }
         when (target) {
-            EditorTarget.New -> {
-                val now = LocalDateTime.now(DateTimeFormat.zone())
-                _uiState.update {
-                    it.copy(
-                        isEditing = false,
-                        eventId = null,
-                        title = "",
-                        note = "",
-                        date = now.toLocalDate(),
-                        time = now.toLocalTime().withSecond(0).withNano(0),
-                    )
-                }
-            }
+            EditorTarget.New -> startNew()
+            is EditorTarget.Edit -> startEdit(target.eventId)
+        }
+    }
 
-            is EditorTarget.Edit -> {
-                loadJob = viewModelScope.launch {
-                    val event = repository.getEvent(target.eventId) ?: return@launch
-                    val local = DateTimeFormat.toLocalDateTime(event.timestamp)
-                    _uiState.update {
-                        it.copy(
-                            isEditing = true,
-                            eventId = event.id,
-                            title = event.title,
-                            note = event.note.orEmpty(),
-                            date = local.toLocalDate(),
-                            time = local.toLocalTime().withSecond(0).withNano(0),
-                            selectedCategoryId = event.categoryId,
-                            expandedIds = it.expandedIds + it.tree.ancestorIds(event.categoryId),
-                        )
-                    }
-                }
+    private fun startNew() {
+        val now = LocalDateTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0)
+        val fallbackStart = now.minusMinutes(30)
+        _uiState.update {
+            it.copy(
+                isEditing = false,
+                eventId = null,
+                note = "",
+                startDate = fallbackStart.toLocalDate(),
+                startTime = fallbackStart.toLocalTime(),
+                endDate = now.toLocalDate(),
+                endTime = now.toLocalTime(),
+                timeError = false,
+            )
+        }
+        loadJob = viewModelScope.launch {
+            val nowMillis = DateTimeFormat.toEpochMillis(now.toLocalDate(), now.toLocalTime())
+            val lastEnd = repository.latestEventEnd()
+            // 接着上次记录继续：上一次结束在 12 小时内，就用它作为开始；否则回退到「半小时前」。
+            val startMillis = if (lastEnd in (nowMillis - 12 * 3_600_000L)..(nowMillis - 60_000L)) {
+                lastEnd
+            } else {
+                nowMillis - 30 * 60_000L
+            }
+            val startLocal = DateTimeFormat.toLocalDateTime(startMillis)
+            _uiState.update {
+                it.copy(
+                    startDate = startLocal.toLocalDate(),
+                    startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
+                    endDate = now.toLocalDate(),
+                    endTime = now.toLocalTime(),
+                )
             }
         }
     }
 
-    fun onTitleChange(value: String) {
-        _uiState.update { it.copy(title = value, titleError = false) }
+    private fun startEdit(eventId: Long) {
+        loadJob = viewModelScope.launch {
+            val event = repository.getEvent(eventId) ?: return@launch
+            val startLocal = DateTimeFormat.toLocalDateTime(event.startAt)
+            val endLocal = DateTimeFormat.toLocalDateTime(event.endAt)
+            _uiState.update {
+                it.copy(
+                    isEditing = true,
+                    eventId = event.id,
+                    note = event.note.orEmpty(),
+                    startDate = startLocal.toLocalDate(),
+                    startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
+                    endDate = endLocal.toLocalDate(),
+                    endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
+                    selectedCategoryId = event.categoryId,
+                    timeError = false,
+                )
+            }
+        }
     }
 
     fun onNoteChange(value: String) {
@@ -105,49 +124,65 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
     }
 
     fun onCategorySelected(categoryId: Long) {
-        _uiState.update {
-            it.copy(
-                selectedCategoryId = categoryId,
-                expandedIds = it.expandedIds + it.tree.ancestorIds(categoryId),
-            )
-        }
+        _uiState.update { it.copy(selectedCategoryId = categoryId) }
     }
 
-    fun onCategoryExpanded(categoryId: Long) {
-        _uiState.update {
-            val expanded = if (categoryId in it.expandedIds) {
-                it.expandedIds - categoryId
+    fun onStartDateSelected(date: LocalDate) = updateStart(date, _uiState.value.startTime)
+
+    fun onStartTimeSelected(time: LocalTime) =
+        updateStart(_uiState.value.startDate, time.withSecond(0).withNano(0))
+
+    /**
+     * 改开始时间时顺手把结束时间推到「开始 + 30 分钟」，避免出现负区间；
+     * 改结束时间不做自动纠正，交给保存时的校验提示。
+     */
+    private fun updateStart(date: LocalDate, time: LocalTime) {
+        _uiState.update { state ->
+            val startMillis = DateTimeFormat.toEpochMillis(date, time)
+            val endMillis = DateTimeFormat.toEpochMillis(state.endDate, state.endTime)
+            if (endMillis <= startMillis) {
+                val endLocal = DateTimeFormat.toLocalDateTime(startMillis + 30 * 60_000L)
+                state.copy(
+                    startDate = date,
+                    startTime = time,
+                    endDate = endLocal.toLocalDate(),
+                    endTime = endLocal.toLocalTime(),
+                    timeError = false,
+                )
             } else {
-                it.expandedIds + categoryId
+                state.copy(startDate = date, startTime = time, timeError = false)
             }
-            it.copy(expandedIds = expanded)
         }
     }
 
-    fun onDateSelected(date: LocalDate) {
-        _uiState.update { it.copy(date = date) }
+    fun onEndDateSelected(date: LocalDate) {
+        _uiState.update { it.copy(endDate = date, timeError = false) }
     }
 
-    fun onTimeSelected(time: LocalTime) {
-        _uiState.update { it.copy(time = time.withSecond(0).withNano(0)) }
+    fun onEndTimeSelected(time: LocalTime) {
+        _uiState.update {
+            it.copy(endTime = time.withSecond(0).withNano(0), timeError = false)
+        }
     }
 
     fun save() {
         val state = _uiState.value
         if (state.isSaving) return
-        if (state.title.isBlank()) {
-            _uiState.update { it.copy(titleError = true) }
+        val categoryId = state.selectedCategoryId ?: return
+        val startAt = DateTimeFormat.toEpochMillis(state.startDate, state.startTime)
+        val endAt = DateTimeFormat.toEpochMillis(state.endDate, state.endTime)
+        if (endAt <= startAt) {
+            _uiState.update { it.copy(timeError = true) }
             return
         }
-        val categoryId = state.selectedCategoryId ?: return
-        _uiState.update { it.copy(isSaving = true) }
+        _uiState.update { it.copy(isSaving = true, timeError = false) }
         viewModelScope.launch {
             runCatching {
                 repository.saveEvent(
                     id = state.eventId,
-                    title = state.title,
                     note = state.note,
-                    timestamp = DateTimeFormat.toEpochMillis(state.date, state.time),
+                    startAt = startAt,
+                    endAt = endAt,
                     categoryId = categoryId,
                 )
             }.onSuccess {
@@ -164,9 +199,15 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
             RecordUiState(
                 tree = current.tree,
                 selectedCategoryId = current.selectedCategoryId,
-                expandedIds = current.expandedIds,
             )
         }
+    }
+
+    private fun defaultCategoryId(tree: CategoryTree): Long? {
+        // 默认落在第一个叶子分类（工作 / 执行）上，方便快速连记。
+        return tree.flatten().firstOrNull { it.first.children.isEmpty() }
+            ?.first?.category?.id
+            ?: tree.roots.firstOrNull()?.category?.id
     }
 
     companion object {

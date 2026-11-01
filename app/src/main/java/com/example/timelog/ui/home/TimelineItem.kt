@@ -1,132 +1,238 @@
 package com.example.timelog.ui.home
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.timelog.domain.model.TimelineEvent
+import androidx.compose.ui.unit.sp
+import com.example.timelog.domain.model.TimelineSegment
 import com.example.timelog.util.DateTimeFormat
 
-@OptIn(ExperimentalFoundationApi::class)
+private val BlockShape = RoundedCornerShape(14.dp)
+
 @Composable
-fun TimelineItem(
-    item: TimelineEvent,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
+fun CategoryDot(
+    colorHex: Long,
+    size: Dp = 7.dp,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Box(
         modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(Color(colorHex)),
+    )
+}
+
+/**
+ * 时间流里的一行：左侧只在块与块的交接处显示时间，右侧是块本体。
+ * 未记录的时间由虚线「未分类」块占位。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun TimelineSegmentRow(
+    segment: TimelineSegment,
+    onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)?,
+) {
+    val height = rememberBlockHeight(segment)
+    val hairline = MaterialTheme.colorScheme.outlineVariant
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 20.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 6.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        val lineColor = MaterialTheme.colorScheme.outlineVariant
+        Box(modifier = Modifier.width(44.dp).height(height)) {
+            Text(
+                text = DateTimeFormat.time(segment.startAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 3.dp),
+            )
+        }
+        androidx.compose.foundation.Canvas(modifier = Modifier.width(6.dp).height(height)) {
+            val y = 8.dp.toPx()
+            drawLine(
+                color = hairline,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1.dp.toPx(),
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+
+        val blockModifier = Modifier
+            .weight(1f)
+            .height(height)
+        if (segment.isUnrecorded) {
+            UnrecordedBlock(segment = segment, modifier = blockModifier)
+        } else {
+            val clickable = if (onClick != null || onLongClick != null) {
+                blockModifier.combinedClickable(
+                    onClick = { onClick?.invoke() },
+                    onLongClick = { onLongClick?.invoke() },
+                )
+            } else {
+                blockModifier
+            }
+            RecordedBlock(segment = segment, modifier = clickable)
+        }
+    }
+}
+
+@Composable
+private fun RecordedBlock(segment: TimelineSegment, modifier: Modifier) {
+    val accent = Color(segment.events.first().categoryColor)
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val textColor = if (darkTheme) lerp(accent, Color.White, 0.35f) else accent
+    val background = accent.copy(alpha = if (darkTheme) 0.20f else 0.09f)
+    val border = accent.copy(alpha = if (darkTheme) 0.38f else 0.22f)
+
+    Box(
+        modifier = modifier
+            .clip(BlockShape)
+            .background(background)
+            .border(1.dp, border, BlockShape),
+    ) {
         Box(
             modifier = Modifier
-                .width(68.dp)
-                .fillMaxHeight(),
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val x = size.width / 2f
-                drawLine(
-                    color = lineColor,
-                    start = Offset(x, 0f),
-                    end = Offset(x, size.height),
-                    strokeWidth = 1.dp.toPx(),
-                )
-            }
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 12.dp),
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.background,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Text(
-                    text = DateTimeFormat.time(item.event.timestamp),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(14.dp))
-
+                .fillMaxHeight()
+                .width(3.dp)
+                .background(accent.copy(alpha = if (darkTheme) 0.85f else 0.7f)),
+        )
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(top = 8.dp, bottom = 16.dp),
+            modifier = Modifier.padding(start = 13.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
         ) {
-            Text(
-                text = item.event.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CategoryDot(colorHex = item.categoryColor)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = item.categoryPath.ifEmpty { "未分类" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            val note = item.event.note
-            if (!note.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            segment.events.forEachIndexed { index, item ->
+                if (index > 0) {
+                    Spacer(Modifier.height(8.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CategoryDot(colorHex = item.categoryColor, size = 6.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = item.categoryPath,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        color = textColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                item.event.note?.let { note ->
+                    Text(
+                        text = note,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 12.dp, top = 3.dp),
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun CategoryDot(colorHex: Long, size: Dp = 7.dp) {
+private fun UnrecordedBlock(segment: TimelineSegment, modifier: Modifier) {
+    val outline = MaterialTheme.colorScheme.outlineVariant
+    val height = rememberBlockHeight(segment)
     Box(
-        modifier = Modifier
-            .size(size)
-            .background(Color(colorHex), CircleShape),
-    )
+        modifier = modifier
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+                shape = BlockShape,
+            )
+            .drawBehind {
+                val stroke = 1.dp.toPx()
+                val path = Path().apply {
+                    addRoundRect(
+                        RoundRect(
+                            rect = androidx.compose.ui.geometry.Rect(
+                                left = stroke / 2f,
+                                top = stroke / 2f,
+                                right = size.width - stroke / 2f,
+                                bottom = size.height - stroke / 2f,
+                            ),
+                            cornerRadius = CornerRadius(14.dp.toPx()),
+                        ),
+                    )
+                }
+                drawPath(
+                    path = path,
+                    color = outline,
+                    style = Stroke(
+                        width = stroke,
+                        pathEffect = PathEffect.dashPathEffect(
+                            floatArrayOf(5.dp.toPx(), 5.dp.toPx()),
+                        ),
+                    ),
+                )
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.TopStart,
+    ) {
+        Column {
+            Text(
+                text = "未分类",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (height >= 62.dp) {
+                Text(
+                    text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 块高按分钟数近似线性，并做上下限，避免 8 小时块占满整屏。 */
+@Composable
+private fun rememberBlockHeight(segment: TimelineSegment): Dp {
+    val minutes = ((segment.endAt - segment.startAt).coerceAtLeast(60_000L)) / 60_000f
+    return if (segment.isUnrecorded) {
+        (42f + minutes * 0.45f).coerceIn(46f, 112f).dp
+    } else {
+        val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 30f
+        (54f + minutes * 0.55f + extraRows).coerceIn(58f, 208f).dp
+    }
 }
