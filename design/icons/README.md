@@ -30,6 +30,16 @@ Pick one and the master 512 px file is ready for adaptive-icon export (foregroun
 - `overview.png` — 1720×860 contact sheet, labelled A–E + 96 px legibility row
 - `render.py` — reproducible Pillow renderer (4× supersampling, LANCZOS)
 
+## Fonts & license
+
+The masters are rendered with **Noto Serif SC** (A, captions) and **Noto Sans SC** (D seal), both from the
+[Noto CJK project](https://github.com/notofonts/noto-cjk) and licensed under the
+[SIL Open Font License 1.1](https://openfontlicense.org/). The font files are not redistributed here —
+`render.py` loads them from the system (Windows: `C:/Windows/Fonts/NotoSerifSC-VF.ttf` and
+`NotoSansSC-VF.ttf`).
+
+The icon artwork in this directory is part of the project and released under Apache-2.0.
+
 ## Palette
 
 | token | hex |
@@ -45,6 +55,6 @@ Pick one and the master 512 px file is ready for adaptive-icon export (foregroun
 | category green (unused) | #2F8F5B |
 | category purple (unused) | #8A63C9 |
 
-Type: 時 is Yu Mincho Demibold in A and the overview captions, Microsoft YaHei Bold in the D seal.
+Type: 時 is Noto Serif SC SemiBold in A and the overview captions; the D seal uses Noto Sans SC Bold. Both fonts are under the SIL Open Font License 1.1 and are not bundled with this repository.
 E's ground is pine-soft so the set reads as a family without using the paper field five times.
 C's ochre is the category ochre #C07A2B, the only category colour used here.

@@ -17,9 +17,38 @@ HAIR      = (228, 225, 218)
 OCHRE     = (192, 122, 43)
 MUTED     = (108, 110, 106)
 
-SERIF = r"C:/Windows/Fonts/yumindb.ttf"
-SANSB = r"C:/Windows/Fonts/msyhbd.ttc"
-SANS  = r"C:/Windows/Fonts/msyh.ttc"
+# 字体全部使用 SIL Open Font License 1.1 的 Noto（思源）系列，可自由再分发；
+# 字体不随仓库分发，缺失时回退到其它常见系统字体（见 _pick）。
+#   Noto Serif SC — https://github.com/notofonts/noto-cjk (OFL-1.1)
+#   Noto Sans SC  — https://github.com/notofonts/noto-cjk (OFL-1.1)
+def _pick(*candidates):
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    raise SystemExit("找不到可用字体，请安装 Noto Serif SC / Noto Sans SC：" + " | ".join(candidates))
+
+SERIF = _pick(
+    r"C:/Windows/Fonts/NotoSerifSC-VF.ttf",
+    "/System/Library/Fonts/NotoSerifSC-VF.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+)
+SANSB = _pick(
+    r"C:/Windows/Fonts/NotoSansSC-VF.ttf",
+    "/System/Library/Fonts/NotoSansSC-VF.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+)
+SANS = SANSB
+
+
+def load_font(path, px):
+    """加载字体；可变字体的字重按用途取 SemiBold / Bold / Regular。"""
+    f = ImageFont.truetype(path, int(round(px)))
+    var = "SemiBold" if path == SERIF else ("Bold" if path == SANSB else "Regular")
+    try:
+        f.set_variation_by_name(var)
+    except Exception:
+        pass
+    return f
 
 def P(*v):
     return [float(x) * S for x in v]
@@ -28,7 +57,7 @@ def new(bg=PAPER):
     return Image.new("RGB", (C, C), bg)
 
 def glyph_mask(ch, em_px, path):
-    f = ImageFont.truetype(path, int(round(em_px)))
+    f = load_font(path, em_px)
     tmp = Image.new("L", (int(em_px * 2) + 80, int(em_px * 2) + 80), 0)
     ImageDraw.Draw(tmp).text((em_px, em_px), ch, font=f, fill=255)
     bb = tmp.getbbox()
@@ -156,7 +185,7 @@ def save_icons():
         r.resize((W, W), Image.LANCZOS).save(os.path.join(OUT, "icon-%s-round.png" % k))
 
 def fnt(path, px):
-    return ImageFont.truetype(path, int(round(px)))
+    return load_font(path, px)
 
 def ctext(d, xy, txt, font, fill):
     bb = d.textbbox((0, 0), txt, font=font)

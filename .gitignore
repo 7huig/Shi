@@ -40,3 +40,7 @@ desktop.ini
 # --- 其他 ---
 *.hprof
 .kotlin/
+
+# --- 生成物 / 仓库外文档 ---
+dist/
+PROJECT_CODE.md
