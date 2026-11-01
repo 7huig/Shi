@@ -1,213 +1,434 @@
 package com.example.timelog.ui.stats
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.timelog.domain.CategoryDuration
-import com.example.timelog.domain.DayDuration
-import com.example.timelog.domain.StatsPeriod
+import com.example.timelog.domain.CategoryUsage
+import com.example.timelog.domain.StatsMode
 import com.example.timelog.domain.StatsSummary
+import com.example.timelog.ui.theme.FallGreen
+import com.example.timelog.ui.theme.FallGreenDark
+import com.example.timelog.ui.theme.RiseRed
+import com.example.timelog.ui.theme.RiseRedDark
 import com.example.timelog.util.DateTimeFormat
-import java.time.format.TextStyle
-import java.util.Locale
+import java.time.LocalDate
+import kotlin.math.roundToInt
+
+/** 自定义时间段需要连续弹两次日期选择：先起始日，再结束日。 */
+private enum class DatePickerStep { START, END }
+
+private const val RING_LAYER_COUNT = 3
+private const val RING_GAP_ANGLE = 2.5f
+private const val RING_MIN_ANGLE = 1f
+
+/** 各层环带的内 / 外半径比例（相对于外接圆半径 R）。 */
+private val RING_INNER_RATIOS = floatArrayOf(0.46f, 0.68f, 0.84f)
+private val RING_OUTER_RATIOS = floatArrayOf(0.68f, 0.84f, 1.0f)
 
 /**
- * 统计页（分页容器里的一页，自己不带 Scaffold / 顶栏）。
- * 内容顺序：时间范围切换 -> 总时长与条数 -> 一级分类用时 -> 最近 7 天迷你柱状图 -> [footer]。
- * 颜色取自主题（浅色是 Paper / Ink / Pine / Clay，深色由 colorScheme 自动跟随）。
+ * 统计页（v3.0）：模式切换、范围导航、多层环形堆叠图与分类用时列表。
+ *
+ * 页面整体可滚动；[footer] 渲染在内容最后，用于承载底部数据迁移入口。
  */
 @Composable
 fun StatisticsScreen(
     state: StatisticsUiState,
-    onPeriodSelected: (StatsPeriod) -> Unit,
+    onModeSelected: (StatsMode) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     footer: @Composable () -> Unit = {},
 ) {
     val summary = state.summary
-    val maxCategoryMillis = summary.categories.maxOfOrNull { it.millis } ?: 0L
+    var pickerStep by remember { mutableStateOf<DatePickerStep?>(null) }
+    var pendingStart by remember { mutableStateOf<LocalDate?>(null) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val riseColor = if (isDark) RiseRedDark else RiseRed
+    val fallColor = if (isDark) FallGreenDark else FallGreen
+    val today = LocalDate.now(DateTimeFormat.zone())
+
+    fun openCustomRangePicker() {
+        pendingStart = null
+        pickerStep = DatePickerStep.START
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(top = 4.dp, bottom = 16.dp),
     ) {
-        item(key = "period-selector") {
-            PeriodSelector(period = state.period, onPeriodSelected = onPeriodSelected)
-        }
-        if (!state.isLoading) {
-            if (summary.totalMillis == 0L) {
-                item(key = "empty") { EmptyStats() }
-            } else {
-                item(key = "total") { TotalHeadline(summary = summary) }
-                item(key = "category-title") { SectionTitle("分类用时") }
-                items(
-                    items = summary.categories,
-                    key = { category -> "category-" + category.rootName },
-                ) { category ->
-                    CategoryBarRow(
-                        category = category,
-                        maxCategoryMillis = maxCategoryMillis,
-                    )
+        ModeSelector(
+            mode = state.mode,
+            onModeSelected = onModeSelected,
+            onEditCustomRange = ::openCustomRangePicker,
+        )
+        RangeNav(
+            label = state.label,
+            mode = state.mode,
+            canGoNext = state.canGoNext,
+            onPrevious = onPrevious,
+            onNext = onNext,
+            onEditCustomRange = ::openCustomRangePicker,
+        )
+        when {
+            state.isLoading -> Unit
+            summary == null -> Unit
+            else -> {
+                RingSection(summary = summary)
+                if (summary.totalMillis <= 0L) {
+                    EmptyStats()
+                } else {
+                    SectionHeader("分类用时")
+                    val maxMillis = summary.roots.maxOfOrNull { it.millis } ?: 1L
+                    summary.roots.forEach { root ->
+                        CategoryUsageRow(
+                            usage = root,
+                            maxMillis = maxMillis,
+                            riseColor = riseColor,
+                            fallColor = fallColor,
+                        )
+                    }
                 }
             }
-            if (summary.last7Days.any { it.millis > 0L }) {
-                item(key = "last-7-days") { Last7DaysChart(days = summary.last7Days) }
-            }
         }
-        item(key = "footer") { footer() }
+        Spacer(Modifier.height(16.dp))
+        footer()
+    }
+
+    when (pickerStep) {
+        DatePickerStep.START -> DatePickerSheet(
+            initialDate = state.customRange?.first ?: today,
+            onDismiss = { pickerStep = null },
+            onConfirm = { date ->
+                pendingStart = date
+                pickerStep = DatePickerStep.END
+            },
+        )
+        DatePickerStep.END -> DatePickerSheet(
+            initialDate = pendingStart ?: state.customRange?.second ?: today,
+            onDismiss = { pickerStep = null },
+            onConfirm = { end ->
+                val start = pendingStart ?: end
+                pendingStart = null
+                pickerStep = null
+                if (end.isBefore(start)) {
+                    onCustomRangeSelected(end, start)
+                } else {
+                    onCustomRangeSelected(start, end)
+                }
+            },
+        )
+        null -> Unit
     }
 }
 
 @Composable
-private fun PeriodSelector(
-    period: StatsPeriod,
-    onPeriodSelected: (StatsPeriod) -> Unit,
+private fun ModeSelector(
+    mode: StatsMode,
+    onModeSelected: (StatsMode) -> Unit,
+    onEditCustomRange: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        StatsPeriod.entries.forEach { candidate ->
+        StatsMode.entries.forEach { candidate ->
             FilterChip(
-                selected = candidate == period,
-                onClick = { onPeriodSelected(candidate) },
-                label = { Text(periodLabel(candidate)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
+                selected = candidate == mode,
+                onClick = {
+                    if (candidate == StatsMode.CUSTOM && mode == StatsMode.CUSTOM) {
+                        onEditCustomRange()
+                    } else {
+                        onModeSelected(candidate)
+                    }
+                },
+                label = { Text(statsModeLabel(candidate), fontSize = 13.sp) },
             )
         }
     }
 }
 
-private fun periodLabel(period: StatsPeriod): String = when (period) {
-    StatsPeriod.TODAY -> "今天"
-    StatsPeriod.WEEK -> "本周"
-    StatsPeriod.MONTH -> "本月"
-    StatsPeriod.ALL -> "全部"
+private fun statsModeLabel(mode: StatsMode): String = when (mode) {
+    StatsMode.DAY -> "日"
+    StatsMode.WEEK -> "周"
+    StatsMode.MONTH -> "月"
+    StatsMode.YEAR -> "年"
+    StatsMode.CUSTOM -> "自定义"
 }
 
 @Composable
-private fun TotalHeadline(summary: StatsSummary) {
-    Column(
+private fun RangeNav(
+    label: String,
+    mode: StatsMode,
+    canGoNext: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onEditCustomRange: () -> Unit,
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 8.dp),
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "总时长",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = DateTimeFormat.durationText(summary.totalMillis),
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "共 " + summary.eventCount + " 条记录",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        IconButton(onClick = onPrevious) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                contentDescription = "上一个周期",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (mode == StatsMode.CUSTOM) {
+                TextButton(
+                    onClick = onEditCustomRange,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        text = "修改",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+        IconButton(onClick = onNext, enabled = canGoNext) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = "下一个周期",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onBackground,
+private fun RingSection(summary: StatsSummary) {
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    val isEmpty = summary.totalMillis <= 0L
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp),
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .fillMaxWidth()
+                .aspectRatio(1f),
+        ) {
+            val radius = minOf(size.width, size.height) / 2f
+            if (radius <= 0f) return@Canvas
+            val center = Offset(size.width / 2f, size.height / 2f)
+            if (isEmpty) {
+                for (layer in 0 until RING_LAYER_COUNT) {
+                    drawRingTrack(layer, center, radius, trackColor)
+                }
+            } else {
+                val layerHasContent = BooleanArray(RING_LAYER_COUNT)
+                summary.roots.forEach { root ->
+                    if (root.millis > 0L) layerHasContent[0] = true
+                    if (root.children.isNotEmpty()) layerHasContent[1] = true
+                    if (root.children.any { it.children.isNotEmpty() }) layerHasContent[2] = true
+                }
+                for (layer in 0 until RING_LAYER_COUNT) {
+                    if (layerHasContent[layer]) drawRingTrack(layer, center, radius, trackColor)
+                }
+                drawUsageLayer(
+                    usages = summary.roots,
+                    layer = 0,
+                    startAngle = -90f,
+                    totalSweep = 360f,
+                    center = center,
+                    radius = radius,
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = if (isEmpty) "—" else DateTimeFormat.durationText(summary.totalMillis),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "共 ${summary.eventCount} 条记录",
+                fontSize = 11.sp,
+                color = mutedColor,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        fontSize = 15.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
     )
 }
 
 @Composable
-private fun CategoryBarRow(
-    category: CategoryDuration,
-    maxCategoryMillis: Long,
+private fun EmptyStats() {
+    Text(
+        text = "这段时间还没有记录",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        fontSize = 15.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun CategoryUsageRow(
+    usage: CategoryUsage,
+    maxMillis: Long,
+    riseColor: Color,
+    fallColor: Color,
 ) {
-    val fraction = if (maxCategoryMillis <= 0L) {
+    val accent = Color(usage.colorHex)
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val fraction = if (maxMillis <= 0L) {
         0f
     } else {
-        (category.millis.toFloat() / maxCategoryMillis.toFloat()).coerceIn(0.02f, 1f)
+        (usage.millis.toDouble() / maxMillis.toDouble()).toFloat().coerceIn(0.03f, 1f)
     }
-    val accent = Color(category.colorHex)
-    val track = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 6.dp),
+            .padding(horizontal = 20.dp, vertical = 7.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(7.dp)
+                    .size(8.dp)
                     .clip(CircleShape)
                     .background(accent),
             )
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = category.rootName.ifBlank { "未分类" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(
                 modifier = Modifier.weight(1f),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = usage.name,
+                    modifier = Modifier.weight(1f, fill = false),
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "${usage.eventCount}次",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            DeltaLabel(usage = usage, riseColor = riseColor, fallColor = fallColor)
             Spacer(Modifier.width(8.dp))
             Text(
-                text = DateTimeFormat.durationText(category.millis),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = DateTimeFormat.durationText(usage.millis),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
             )
         }
         Spacer(Modifier.height(6.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(track),
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(trackColor),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(fraction)
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
                     .background(accent),
             )
         }
@@ -215,101 +436,140 @@ private fun CategoryBarRow(
 }
 
 @Composable
-private fun Last7DaysChart(days: List<DayDuration>) {
-    val maxMillis = days.maxOfOrNull { it.millis } ?: 0L
-    val today = days.lastOrNull()?.date
-    val barArea = 56.dp
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp),
-    ) {
+private fun DeltaLabel(usage: CategoryUsage, riseColor: Color, fallColor: Color) {
+    val previous = usage.previousMillis
+    if (previous <= 0L) {
         Text(
-            text = "最近 7 天",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
+            text = "新增",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = riseColor,
+            maxLines = 1,
         )
-        Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            days.forEach { day ->
-                val isToday = day.date == today
-                val fraction = if (maxMillis <= 0L) {
-                    0f
-                } else {
-                    (day.millis.toFloat() / maxMillis.toFloat()).coerceIn(0f, 1f)
-                }
-                val barHeight = (fraction * barArea.value).coerceAtLeast(
-                    if (day.millis > 0L) 3f else 2f,
-                )
-                val barColor = when {
-                    day.millis == 0L -> MaterialTheme.colorScheme.surfaceVariant
-                    isToday -> MaterialTheme.colorScheme.secondary
-                    else -> MaterialTheme.colorScheme.primary
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(barArea),
-                        contentAlignment = Alignment.BottomCenter,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .width(18.dp)
-                                .height(barHeight.dp)
-                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                .background(barColor),
-                        )
+        return
+    }
+    val percent = ((usage.millis - previous).toDouble() / previous.toDouble() * 100.0).roundToInt()
+    val text = when {
+        percent > 0 -> "+$percent%"
+        percent < 0 -> "$percent%"
+        else -> "0%"
+    }
+    val color = when {
+        percent > 0 -> riseColor
+        percent < 0 -> fallColor
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        color = color,
+        maxLines = 1,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerSheet(
+    initialDate: LocalDate,
+    onDismiss: () -> Unit,
+    onConfirm: (LocalDate) -> Unit,
+) {
+    val pickerState = rememberDatePickerState(
+        initialSelectedDateMillis = DateTimeFormat.startOfDayUtcMillis(initialDate),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        onConfirm(DateTimeFormat.dateFromUtcMillis(millis))
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = if (isToday) {
-                            "今天"
-                        } else {
-                            day.date.dayOfWeek.getDisplayName(
-                                TextStyle.SHORT,
-                                Locale.SIMPLIFIED_CHINESE,
-                            )
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = if (isToday) {
-                            MaterialTheme.colorScheme.secondary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        maxLines = 1,
-                    )
-                }
+                },
+            ) {
+                Text("确定")
             }
-        }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    ) {
+        DatePicker(state = pickerState)
     }
 }
 
-@Composable
-private fun EmptyStats() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 24.dp),
-    ) {
-        Text(
-            text = "这段时间还没有记录。",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "换一个时间范围看看，或回到时间流记下刚做完的事。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+/** 单层环带的几何参数：绘制矩形、直径与环宽。 */
+private class RingGeometry(val topLeft: Offset, val size: Size, val strokeWidth: Float)
+
+private fun ringGeometry(layer: Int, center: Offset, radius: Float): RingGeometry {
+    val innerRadius = radius * RING_INNER_RATIOS[layer]
+    val outerRadius = radius * RING_OUTER_RATIOS[layer]
+    val ringRadius = (innerRadius + outerRadius) / 2f
+    return RingGeometry(
+        topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
+        size = Size(ringRadius * 2f, ringRadius * 2f),
+        strokeWidth = outerRadius - innerRadius,
+    )
+}
+
+/** 画一整圈淡色轨道。 */
+private fun DrawScope.drawRingTrack(layer: Int, center: Offset, radius: Float, color: Color) {
+    val geometry = ringGeometry(layer, center, radius)
+    drawArc(
+        color = color,
+        startAngle = 0f,
+        sweepAngle = 360f,
+        useCenter = false,
+        topLeft = geometry.topLeft,
+        size = geometry.size,
+        style = Stroke(width = geometry.strokeWidth),
+    )
+}
+
+/**
+ * 递归画出某一层分类环；子级按父级的角度范围再切分，形成多层堆叠。
+ */
+private fun DrawScope.drawUsageLayer(
+    usages: List<CategoryUsage>,
+    layer: Int,
+    startAngle: Float,
+    totalSweep: Float,
+    center: Offset,
+    radius: Float,
+) {
+    if (layer >= RING_LAYER_COUNT || usages.isEmpty()) return
+    val totalMillis = usages.sumOf { it.millis }
+    if (totalMillis <= 0L) return
+
+    val geometry = ringGeometry(layer, center, radius)
+    var cursor = startAngle
+    usages.forEach { usage ->
+        val sweep = (totalSweep.toDouble() * usage.millis.toDouble() / totalMillis.toDouble()).toFloat()
+        val visibleSweep = (sweep - RING_GAP_ANGLE).coerceAtLeast(RING_MIN_ANGLE).coerceAtMost(sweep)
+        if (visibleSweep > 0f) {
+            drawArc(
+                color = Color(usage.colorHex),
+                startAngle = cursor + (sweep - visibleSweep) / 2f,
+                sweepAngle = visibleSweep,
+                useCenter = false,
+                topLeft = geometry.topLeft,
+                size = geometry.size,
+                style = Stroke(width = geometry.strokeWidth),
+            )
+        }
+        if (usage.children.isNotEmpty()) {
+            drawUsageLayer(
+                usages = usage.children,
+                layer = layer + 1,
+                startAngle = cursor,
+                totalSweep = sweep,
+                center = center,
+                radius = radius,
+            )
+        }
+        cursor += sweep
     }
 }

@@ -15,7 +15,6 @@ object DateTimeFormat {
     private val fullDateFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日 EEEE", zh)
     private val monthDayFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", zh)
     private val shortMonthDayFormatter = DateTimeFormatter.ofPattern("M月d日", zh)
-    private val yearFormatter = DateTimeFormatter.ofPattern("yyyy年", zh)
 
     fun zone(): ZoneId = ZoneId.systemDefault()
 
@@ -33,25 +32,24 @@ object DateTimeFormat {
 
     fun monthDay(date: LocalDate): String = date.format(shortMonthDayFormatter)
 
+    /** 主界面日期标题：今天/昨天，其余只显示「M月d日」，不显示年份与星期。 */
     fun sectionTitle(date: LocalDate, today: LocalDate = LocalDate.now(zone())): String =
         when (date) {
             today -> "今天"
             today.minusDays(1) -> "昨天"
-            else -> if (date.year == today.year) {
-                date.format(monthDayFormatter)
-            } else {
-                date.format(fullDateFormatter)
-            }
+            else -> monthDay(date)
         }
 
+    /** 主界面日期副标题：今天/昨天补上日期，其余只留「周X」小字。 */
     fun sectionSubtitle(date: LocalDate, today: LocalDate = LocalDate.now(zone())): String =
         when (date) {
-            today, today.minusDays(1) -> date.format(monthDayFormatter)
-            else -> date.format(yearFormatter) + " · " + date.dayOfWeek.getDisplayName(
-                TextStyle.FULL,
-                zh,
-            )
+            today, today.minusDays(1) -> monthDay(date) + " · " + weekdayLabel(date)
+            else -> weekdayLabel(date)
         }
+
+    /** 固定输出「周日」「周一」…，不依赖不同 JDK 的 CLDR 短星期文本。 */
+    private fun weekdayLabel(date: LocalDate): String =
+        "周" + date.dayOfWeek.getDisplayName(TextStyle.NARROW, zh)
 
     fun fullDateTime(epochMillis: Long): String =
         toLocalDateTime(epochMillis).format(fullDateFormatter) + " " + time(epochMillis)

@@ -109,7 +109,7 @@ fun DataTransferSection(
                     enabled = !state.busy,
                     filled = true,
                     onClick = {
-                        val fileName = "时计-" +
+                        val fileName = "時-" +
                             DateTimeFormat.isoDate(System.currentTimeMillis()) + ".json"
                         exportLauncher.launch(fileName)
                     },

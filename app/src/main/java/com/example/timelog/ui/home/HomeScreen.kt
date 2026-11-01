@@ -1,6 +1,7 @@
 package com.example.timelog.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,12 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,13 +35,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.timelog.ui.theme.ActionBlue
 import com.example.timelog.ui.theme.Clay
 import com.example.timelog.util.DateTimeFormat
 
 /**
- * 时间轴页：不再自带 Scaffold / 顶栏 / 底栏，外壳（MainActivity）统一提供页签与「完成」按钮，
+ * 时间轴页：不再自带 Scaffold / 顶栏 / 底栏，外壳（MainActivity）统一提供页签与右下角「+」按钮，
  * 这样时间轴与统计页可以放在同一个 HorizontalPager 里左右滑动切换。
  */
 @Composable
@@ -101,26 +105,33 @@ fun TimelinePage(
     }
 }
 
+/**
+ * 时间轴页右下角的悬浮加号：蓝底圆圈 + 白色「+」，点击新建记录。
+ * 由外壳（MainActivity）叠加在时间轴页之上；列表底部已预留 96dp，避免遮住最后一条记录。
+ */
 @Composable
-fun RecordBar(onNewRecord: () -> Unit) {
+fun TimelineFabOverlay(onNewRecord: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 14.dp),
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomEnd,
     ) {
-        Button(
-            onClick = onNewRecord,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ),
+        Box(
+            modifier = Modifier
+                .padding(end = 24.dp, bottom = 24.dp)
+                .navigationBarsPadding()
+                .size(62.dp)
+                .shadow(8.dp, CircleShape)
+                .clip(CircleShape)
+                .background(ActionBlue)
+                .clickable(role = Role.Button, onClick = onNewRecord),
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("完成", style = MaterialTheme.typography.titleMedium)
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = "新建记录",
+                tint = Color.White,
+                modifier = Modifier.size(30.dp),
+            )
         }
     }
 }
@@ -138,7 +149,7 @@ private fun EmptyTimeline() {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "点下方的「完成」，记下刚刚做完的事。",
+            text = "点右下角的 +，记下刚刚做完的事。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -156,7 +167,7 @@ private fun TimelineList(
 ) {
     val listState = rememberLazyListState()
     val itemCount = days.size + days.sumOf { it.segments.size } + days.count { it.isToday }
-    // 倒序改成正序后，最新的记录在列表底部，靠近「完成」键；第一次打开与新增记录后都停在底部。
+    // 倒序改成正序后，最新的记录在列表底部，靠近右下角的「+」；第一次打开与新增记录后都停在底部。
     val lastRecordedAt = remember(days) {
         days.flatMap { it.segments }.filterNot { it.isUnrecorded }
             .maxOfOrNull { it.endAt } ?: 0L
@@ -176,8 +187,8 @@ private fun TimelineList(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         state = listState,
-        // 底部留白很小：「现在」横线尽量贴近下方的「完成」按钮。
-        contentPadding = PaddingValues(top = 10.dp, bottom = 2.dp),
+        // 底部留 96dp 给右下角的悬浮「+」，避免遮住最后一条记录。
+        contentPadding = PaddingValues(top = 10.dp, bottom = 96.dp),
     ) {
         days.forEach { day ->
             item(key = "day-${day.date}") {
@@ -240,7 +251,7 @@ private fun NowMarker() {
             .padding(start = 24.dp, end = 24.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.width(44.dp), contentAlignment = Alignment.CenterEnd) {
+        Box(modifier = Modifier.width(48.dp), contentAlignment = Alignment.CenterEnd) {
             Text(
                 text = "现在",
                 style = MaterialTheme.typography.labelSmall,

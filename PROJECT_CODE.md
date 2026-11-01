@@ -1,4 +1,4 @@
-# 時計 · 完整源码
+# 時 · 完整源码
 
 > 由仓库 tracked 文件自动汇总，便于按文件路径审阅。构建入口与说明见 [README.md](README.md)。
 
@@ -18,18 +18,29 @@
 - `app/src/main/java/com/example/timelog/data/local/entity/EventEntity.kt`
 - `app/src/main/java/com/example/timelog/data/repository/TimeLogRepository.kt`
 - `app/src/main/java/com/example/timelog/data/seed/DefaultCategories.kt`
+- `app/src/main/java/com/example/timelog/data/transfer/TransferJson.kt`
+- `app/src/main/java/com/example/timelog/domain/OverlapResolver.kt`
+- `app/src/main/java/com/example/timelog/domain/Statistics.kt`
 - `app/src/main/java/com/example/timelog/domain/model/Category.kt`
+- `app/src/main/java/com/example/timelog/domain/model/CategoryPalette.kt`
 - `app/src/main/java/com/example/timelog/domain/model/CategoryTree.kt`
 - `app/src/main/java/com/example/timelog/domain/model/Event.kt`
+- `app/src/main/java/com/example/timelog/domain/model/LedgerSnapshot.kt`
 - `app/src/main/java/com/example/timelog/domain/model/Timeline.kt`
 - `app/src/main/java/com/example/timelog/ui/category/CategoryManageScreen.kt`
 - `app/src/main/java/com/example/timelog/ui/category/CategoryManageViewModel.kt`
+- `app/src/main/java/com/example/timelog/ui/data/DataTransferSection.kt`
+- `app/src/main/java/com/example/timelog/ui/data/DataTransferViewModel.kt`
 - `app/src/main/java/com/example/timelog/ui/home/HomeScreen.kt`
 - `app/src/main/java/com/example/timelog/ui/home/HomeViewModel.kt`
 - `app/src/main/java/com/example/timelog/ui/home/TimelineItem.kt`
 - `app/src/main/java/com/example/timelog/ui/record/CategoryGrid.kt`
 - `app/src/main/java/com/example/timelog/ui/record/RecordSheet.kt`
 - `app/src/main/java/com/example/timelog/ui/record/RecordViewModel.kt`
+- `app/src/main/java/com/example/timelog/ui/search/SearchScreen.kt`
+- `app/src/main/java/com/example/timelog/ui/search/SearchViewModel.kt`
+- `app/src/main/java/com/example/timelog/ui/stats/StatisticsScreen.kt`
+- `app/src/main/java/com/example/timelog/ui/stats/StatisticsViewModel.kt`
 - `app/src/main/java/com/example/timelog/ui/theme/Color.kt`
 - `app/src/main/java/com/example/timelog/ui/theme/Theme.kt`
 - `app/src/main/java/com/example/timelog/ui/theme/Type.kt`
@@ -40,9 +51,12 @@
 - `app/src/main/res/values/colors.xml`
 - `app/src/main/res/values/strings.xml`
 - `app/src/main/res/values/themes.xml`
+- `app/src/test/java/com/example/timelog/domain/OverlapResolverTest.kt`
+- `app/src/test/java/com/example/timelog/domain/StatisticsTest.kt`
 - `app/src/test/java/com/example/timelog/domain/TimelineBuilderTest.kt`
 - `build.gradle.kts`
 - `design/icons/README.md`
+- `design/icons/build_launcher_assets.py`
 - `design/icons/render.py`
 - `gradle.properties`
 - `gradle/libs.versions.toml`
@@ -139,8 +153,8 @@ android {
         applicationId = "com.example.timelog"
         minSdk = 29
         targetSdk = 31
-        versionCode = 3
-        versionName = "2.1"
+        versionCode = 6
+        versionName = "0.1.0"
     }
 
     buildTypes {
@@ -242,22 +256,60 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.timelog.data.repository.TimeLogRepository
 import com.example.timelog.ui.category.CategoryManageScreen
 import com.example.timelog.ui.category.CategoryManageViewModel
-import com.example.timelog.ui.home.HomeScreen
+import com.example.timelog.ui.data.DataTransferSection
+import com.example.timelog.ui.data.DataTransferViewModel
 import com.example.timelog.ui.home.HomeViewModel
+import com.example.timelog.ui.home.TimelineFabOverlay
+import com.example.timelog.ui.home.TimelinePage
 import com.example.timelog.ui.record.RecordSheet
 import com.example.timelog.ui.record.RecordViewModel
+import com.example.timelog.ui.search.SearchScreen
+import com.example.timelog.ui.search.SearchViewModel
+import com.example.timelog.ui.stats.StatisticsScreen
+import com.example.timelog.ui.stats.StatisticsViewModel
 import com.example.timelog.ui.theme.TimeLogTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -272,8 +324,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppScreen { Home, Categories }
+private const val PAGE_TIMELINE = 0
+private const val PAGE_STATS = 1
 
+private const val OVERLAY_SEARCH = "search"
+private const val OVERLAY_CATEGORIES = "categories"
+
+/**
+ * 应用外壳：紧凑顶栏 + 左右滑动的主界面/统计页。
+ * 时间轴页的「記一笔」入口是右下角蓝底白色加号的浮动按钮；搜索与分类是整屏浮层。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimeLogApp(repository: TimeLogRepository) {
     val homeViewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(repository))
@@ -281,17 +342,24 @@ private fun TimeLogApp(repository: TimeLogRepository) {
     val categoryViewModel: CategoryManageViewModel = viewModel(
         factory = CategoryManageViewModel.factory(repository),
     )
+    val searchViewModel: SearchViewModel = viewModel(factory = SearchViewModel.factory(repository))
+    val statisticsViewModel: StatisticsViewModel = viewModel(
+        factory = StatisticsViewModel.factory(repository),
+    )
+    val transferViewModel: DataTransferViewModel = viewModel(
+        factory = DataTransferViewModel.factory(repository),
+    )
 
     val homeState by homeViewModel.uiState.collectAsStateWithLifecycle()
     val recordState by recordViewModel.uiState.collectAsStateWithLifecycle()
     val categoryState by categoryViewModel.uiState.collectAsStateWithLifecycle()
+    val statisticsState by statisticsViewModel.uiState.collectAsStateWithLifecycle()
 
-    var screen by rememberSaveable { mutableStateOf(AppScreen.Home) }
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val scope = rememberCoroutineScope()
+    var overlay by rememberSaveable { mutableStateOf<String?>(null) }
     val editorTarget = homeState.editor
-
-    BackHandler(enabled = screen == AppScreen.Categories) {
-        screen = AppScreen.Home
-    }
+    val currentPage = pagerState.currentPage
 
     LaunchedEffect(editorTarget) {
         editorTarget?.let(recordViewModel::start)
@@ -304,33 +372,85 @@ private fun TimeLogApp(repository: TimeLogRepository) {
         }
     }
 
-    when (screen) {
-        AppScreen.Home -> HomeScreen(
-            state = homeState,
-            onNewRecord = homeViewModel::openNewRecord,
-            onOpenCategories = { screen = AppScreen.Categories },
-            onEventClick = homeViewModel::openEditRecord,
-            onEventLongClick = homeViewModel::requestDelete,
-            onFillGap = homeViewModel::openFillRecord,
-            onDismissDelete = homeViewModel::dismissDelete,
-            onConfirmDelete = homeViewModel::confirmDelete,
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppHeader(
+                page = currentPage,
+                onSelectPage = { target ->
+                    scope.launch { pagerState.animateScrollToPage(target) }
+                },
+                onSearch = { overlay = OVERLAY_SEARCH },
+                onOpenCategories = { overlay = OVERLAY_CATEGORIES },
+            )
 
-        AppScreen.Categories -> CategoryManageScreen(
-            state = categoryState,
-            onBack = { screen = AppScreen.Home },
-            onAddRoot = { categoryViewModel.startCreate(null) },
-            onAddChild = categoryViewModel::startCreate,
-            onEdit = categoryViewModel::startEdit,
-            onDelete = categoryViewModel::requestDelete,
-            onEditorNameChange = categoryViewModel::onEditorNameChange,
-            onEditorColorChange = categoryViewModel::onEditorColorChange,
-            onEditorDismiss = categoryViewModel::dismissEditor,
-            onEditorSave = categoryViewModel::saveEditor,
-            onDeleteDismiss = categoryViewModel::dismissDelete,
-            onDeleteConfirm = categoryViewModel::confirmDelete,
-            onMessageShown = categoryViewModel::consumeMessage,
-        )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .navigationBarsPadding(),
+            ) { page ->
+                when (page) {
+                    PAGE_TIMELINE -> TimelinePage(
+                        state = homeState,
+                        onEventClick = homeViewModel::openEditRecord,
+                        onEventLongClick = homeViewModel::requestDelete,
+                        onFillGap = homeViewModel::openFillRecord,
+                        onDismissDelete = homeViewModel::dismissDelete,
+                        onConfirmDelete = homeViewModel::confirmDelete,
+                    )
+
+                    else -> StatisticsScreen(
+                        state = statisticsState,
+                        onModeSelected = statisticsViewModel::selectMode,
+                        onPrevious = statisticsViewModel::goPrevious,
+                        onNext = statisticsViewModel::goNext,
+                        onCustomRangeSelected = statisticsViewModel::setCustomRange,
+                        footer = { DataTransferSection(viewModel = transferViewModel) },
+                    )
+                }
+            }
+        }
+
+        // 浮动「+」入口：叠在内容之上，不占用列表高度；只在時記页显示。
+        if (currentPage == PAGE_TIMELINE) {
+            TimelineFabOverlay(onNewRecord = homeViewModel::openNewRecord)
+        }
+
+        if (overlay == OVERLAY_SEARCH) {
+            Surface(modifier = Modifier.fillMaxSize()) {
+                SearchScreen(
+                    onBack = { overlay = null },
+                    onOpenEvent = { eventId ->
+                        overlay = null
+                        homeViewModel.openEditRecord(eventId)
+                    },
+                    viewModel = searchViewModel,
+                )
+            }
+        }
+
+        if (overlay == OVERLAY_CATEGORIES) {
+            BackHandler { overlay = null }
+            CategoryManageScreen(
+                state = categoryState,
+                onBack = { overlay = null },
+                onAddRoot = { categoryViewModel.startCreate(null) },
+                onAddChild = categoryViewModel::startCreate,
+                onEdit = categoryViewModel::startEdit,
+                onDelete = categoryViewModel::requestDelete,
+                onEditorNameChange = categoryViewModel::onEditorNameChange,
+                onEditorColorChange = categoryViewModel::onEditorColorChange,
+                onEditorDismiss = categoryViewModel::dismissEditor,
+                onEditorSave = categoryViewModel::saveEditor,
+                onDeleteDismiss = categoryViewModel::dismissDelete,
+                onDeleteConfirm = categoryViewModel::confirmDelete,
+                onMessageShown = categoryViewModel::consumeMessage,
+            )
+        }
     }
 
     if (editorTarget != null) {
@@ -344,7 +464,67 @@ private fun TimeLogApp(repository: TimeLogRepository) {
             onEndDateSelected = recordViewModel::onEndDateSelected,
             onEndTimeSelected = recordViewModel::onEndTimeSelected,
             onSave = recordViewModel::save,
+            onConfirmOverwrite = recordViewModel::confirmOverwrite,
+            onCancelOverwrite = recordViewModel::dismissOverwrite,
         )
+    }
+}
+
+/** 紧凑顶栏：两个页签同为 23sp serif 样式，选中的用墨色、未选的用次要色。 */
+@Composable
+private fun AppHeader(
+    page: Int,
+    onSelectPage: (Int) -> Unit,
+    onSearch: () -> Unit,
+    onOpenCategories: () -> Unit,
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val active = MaterialTheme.colorScheme.onBackground
+    val tabStyle = MaterialTheme.typography.headlineMedium.copy(
+        fontSize = 23.sp,
+        lineHeight = 28.sp,
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(start = 22.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "時記",
+            style = tabStyle,
+            color = if (page == PAGE_TIMELINE) active else muted,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onSelectPage(PAGE_TIMELINE) }
+                .padding(horizontal = 2.dp, vertical = 2.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            text = "時計",
+            style = tabStyle,
+            color = if (page == PAGE_STATS) active else muted,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onSelectPage(PAGE_STATS) }
+                .padding(horizontal = 2.dp, vertical = 2.dp),
+        )
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onSearch) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = "搜索备注",
+                tint = muted,
+            )
+        }
+        TextButton(onClick = onOpenCategories) {
+            Text(
+                text = "分类",
+                style = MaterialTheme.typography.labelLarge,
+                color = muted,
+            )
+        }
     }
 }
 ```
@@ -383,7 +563,7 @@ import com.example.timelog.data.seed.DefaultCategories
 
 @Database(
     entities = [CategoryEntity::class, EventEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -393,7 +573,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "time-log.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .addCallback(SeedCallback())
                 .build()
 
@@ -465,6 +645,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 换成 24 节气色板：只改仍是旧默认色的种子分类，用户自己挑过的颜色保持不动。
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                recolor(db, 1, 0xFF3D6BDB, 0xFF5A7FA8)
+                recolor(db, 11, 0xFF4C7BE8, 0xFF3F5B78)
+                recolor(db, 12, 0xFF2F5DAF, 0xFF8A9AB8)
+                recolor(db, 2, 0xFF8A63C9, 0xFF9E86B8)
+                recolor(db, 21, 0xFF9C79D6, 0xFF8B72A6)
+                recolor(db, 22, 0xFF7150A8, 0xFF8A86A8)
+                recolor(db, 3, 0xFFC07A2B, 0xFFC9A24E)
+                recolor(db, 31, 0xFFD99445, 0xFFB8933F)
+                recolor(db, 32, 0xFF9E6220, 0xFFA98A5A)
+                recolor(db, 4, 0xFFB4654A, 0xFF94594A)
+                recolor(db, 41, 0xFFCC7C5E, 0xFFC46E4A)
+                recolor(db, 42, 0xFF8E4A35, 0xFFA8463A)
+            }
+
+            private fun recolor(db: SupportSQLiteDatabase, id: Long, oldColor: Long, newColor: Long) {
+                db.execSQL(
+                    "UPDATE category SET colorHex = ? WHERE id = ? AND colorHex = ?",
+                    arrayOf<Any?>(newColor, id, oldColor),
+                )
+            }
+        }
+
         private class SeedCallback : Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
@@ -528,6 +735,9 @@ interface CategoryDao {
 
     @Query("DELETE FROM category WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM category")
+    suspend fun deleteAll()
 }
 ```
 
@@ -548,6 +758,9 @@ interface EventDao {
     @Query("SELECT * FROM event ORDER BY startAt ASC, id ASC")
     fun observeAll(): Flow<List<EventEntity>>
 
+    @Query("SELECT * FROM event ORDER BY startAt ASC, id ASC")
+    suspend fun getAll(): List<EventEntity>
+
     @Query("SELECT * FROM event WHERE id = :id")
     suspend fun getById(id: Long): EventEntity?
 
@@ -563,14 +776,29 @@ interface EventDao {
     @Query("DELETE FROM event WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("DELETE FROM event")
+    suspend fun deleteAll()
+
+    @Query("DELETE FROM event WHERE categoryId IN (:categoryIds)")
+    suspend fun deleteByCategoryIds(categoryIds: List<Long>): Int
+
     @Query("SELECT COUNT(*) FROM event WHERE categoryId IN (:categoryIds)")
     suspend fun countByCategoryIds(categoryIds: List<Long>): Int
 
+    /** 与 [startAt, endAt) 有交集的事件；excludeId 用来排除正在编辑的那条。 */
     @Query(
-        "UPDATE event SET categoryId = :targetCategoryId, updatedAt = :now " +
-            "WHERE categoryId IN (:categoryIds)",
+        "SELECT * FROM event " +
+            "WHERE startAt < :endAt AND endAt > :startAt AND id != :excludeId " +
+            "ORDER BY startAt ASC, id ASC",
     )
-    suspend fun reassignCategory(categoryIds: List<Long>, targetCategoryId: Long, now: Long)
+    suspend fun getOverlapping(startAt: Long, endAt: Long, excludeId: Long): List<EventEntity>
+
+    @Query(
+        "SELECT * FROM event " +
+            "WHERE note IS NOT NULL AND note LIKE '%' || :query || '%' " +
+            "ORDER BY startAt DESC, id DESC",
+    )
+    fun searchByNote(query: String): Flow<List<EventEntity>>
 }
 ```
 
@@ -652,13 +880,19 @@ import androidx.room.withTransaction
 import com.example.timelog.data.local.AppDatabase
 import com.example.timelog.data.local.entity.CategoryEntity
 import com.example.timelog.data.local.entity.EventEntity
+import com.example.timelog.domain.OverlapPlan
 import com.example.timelog.domain.model.Category
 import com.example.timelog.domain.model.CategoryTree
 import com.example.timelog.domain.model.Event
+import com.example.timelog.domain.model.ExportedCategory
+import com.example.timelog.domain.model.ExportedEvent
+import com.example.timelog.domain.model.ImportMode
+import com.example.timelog.domain.model.LedgerSnapshot
 import com.example.timelog.domain.model.TimelineEvent
 import com.example.timelog.domain.model.buildCategoryTree
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 class TimeLogRepository(private val database: AppDatabase) {
@@ -689,6 +923,29 @@ class TimeLogRepository(private val database: AppDatabase) {
 
     suspend fun latestEventEnd(): Long = eventDao.latestEnd()
 
+    /** 按备注搜索；空白关键字直接返回空列表，不查库。 */
+    fun searchEvents(query: String): Flow<List<TimelineEvent>> {
+        val keyword = query.trim()
+        if (keyword.isEmpty()) return flowOf(emptyList())
+        return combine(
+            eventDao.searchByNote(keyword),
+            categoryDao.observeAll(),
+        ) { entities, categories ->
+            val tree = buildCategoryTree(categories.map { it.toDomain() })
+            entities.map { entity ->
+                val event = entity.toDomain()
+                TimelineEvent(
+                    event = event,
+                    categoryPath = tree.pathOf(event.categoryId),
+                    categoryColor = tree.find(event.categoryId)?.category?.colorHex ?: 0xFF9AA29A,
+                )
+            }
+        }
+    }
+
+    suspend fun getOverlappingEvents(startAt: Long, endAt: Long, excludeId: Long): List<Event> =
+        eventDao.getOverlapping(startAt, endAt, excludeId).map { it.toDomain() }
+
     suspend fun saveEvent(
         id: Long?,
         note: String?,
@@ -697,7 +954,7 @@ class TimeLogRepository(private val database: AppDatabase) {
         categoryId: Long,
     ) {
         val now = System.currentTimeMillis()
-        val cleanNote = note?.trim()?.ifEmpty { null }
+        val cleanNote = note.cleanNote()
         val safeEndAt = endAt.coerceAtLeast(startAt + 60_000L)
         if (id == null) {
             eventDao.insert(
@@ -721,6 +978,78 @@ class TimeLogRepository(private val database: AppDatabase) {
                     updatedAt = now,
                 ),
             )
+        }
+    }
+
+    /**
+     * 保存正在编辑的区间，并按 [plan] 让其它重叠记录让路：
+     * victims 由用户确认后才会出现在 plan 里，调用方保证确认语义。
+     */
+    suspend fun saveEventResolved(
+        id: Long?,
+        note: String?,
+        startAt: Long,
+        endAt: Long,
+        categoryId: Long,
+        plan: OverlapPlan,
+    ): Long = database.withTransaction {
+        val now = System.currentTimeMillis()
+        val cleanNote = note.cleanNote()
+        val safeEndAt = endAt.coerceAtLeast(startAt + 60_000L)
+
+        plan.victims.forEach { victim -> eventDao.deleteById(victim.id) }
+        plan.updates.forEach { update ->
+            eventDao.getById(update.event.id)?.let { existing ->
+                eventDao.update(
+                    existing.copy(
+                        startAt = update.startAt,
+                        endAt = update.endAt,
+                        updatedAt = now,
+                    ),
+                )
+            }
+        }
+        plan.clones.forEach { clone ->
+            val cloneEnd = clone.endAt.coerceAtLeast(clone.startAt + 60_000L)
+            eventDao.insert(
+                EventEntity(
+                    note = clone.note.cleanNote(),
+                    startAt = clone.startAt,
+                    endAt = cloneEnd,
+                    categoryId = clone.categoryId,
+                    createdAt = clone.createdAt,
+                    updatedAt = now,
+                ),
+            )
+        }
+
+        if (id == null) {
+            eventDao.insert(
+                EventEntity(
+                    note = cleanNote,
+                    startAt = startAt,
+                    endAt = safeEndAt,
+                    categoryId = categoryId,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+        } else {
+            val existing = eventDao.getById(id)
+            if (existing == null) {
+                -1L
+            } else {
+                eventDao.update(
+                    existing.copy(
+                        note = cleanNote,
+                        startAt = startAt,
+                        endAt = safeEndAt,
+                        categoryId = categoryId,
+                        updatedAt = now,
+                    ),
+                )
+                id
+            }
         }
     }
 
@@ -752,8 +1081,8 @@ class TimeLogRepository(private val database: AppDatabase) {
     }
 
     /**
-     * 删除分类时把该分类及其子树下的事件迁移到「未分类」，避免用户整理分类时丢数据。
-     * 事件外键是 RESTRICT，必须先迁移事件，才能删除分类；子分类由自引用外键 CASCADE 清理。
+     * 删除分类时连同该分类及其子树下的事件一起删除（用户明确要求，不做迁移）。
+     * 事件外键是 RESTRICT，必须先删事件，才能删除分类；子分类由自引用外键 CASCADE 清理。
      */
     suspend fun deleteCategory(categoryId: Long): CategoryDeletionResult = database.withTransaction {
         val all = categoryDao.getAll().map { it.toDomain() }
@@ -762,18 +1091,150 @@ class TimeLogRepository(private val database: AppDatabase) {
         if (node.category.isSystem) return@withTransaction CategoryDeletionResult.SystemCategory
 
         val ids = tree.subtreeIds(categoryId)
-        val eventCount = eventDao.countByCategoryIds(ids)
-        val uncategorized = categoryDao.getSystemCategory()
-            ?: error("系统分类「未分类」缺失")
-        if (eventCount > 0) {
-            eventDao.reassignCategory(ids, uncategorized.id, System.currentTimeMillis())
-        }
+        val deletedEventCount = if (ids.isEmpty()) 0 else eventDao.deleteByCategoryIds(ids)
         categoryDao.deleteById(categoryId)
         CategoryDeletionResult.Deleted(
             categoryCount = ids.size,
-            reassignedEventCount = eventCount,
+            deletedEventCount = deletedEventCount,
         )
     }
+
+    suspend fun snapshot(): LedgerSnapshot = database.withTransaction {
+        LedgerSnapshot(
+            exportedAt = System.currentTimeMillis(),
+            categories = categoryDao.getAll().map { it.toExport() },
+            events = eventDao.getAll().map { it.toExport() },
+        )
+    }
+
+    /**
+     * 导入数据。[ImportMode.REPLACE] 先清空再写入；[ImportMode.MERGE] 保留现有数据，
+     * 同名同父的分类复用，其余分类新建，事件按旧分类 ID 映射到新分类。
+     */
+    suspend fun restore(snapshot: LedgerSnapshot, mode: ImportMode) = database.withTransaction {
+        when (mode) {
+            ImportMode.REPLACE -> restoreReplace(snapshot)
+            ImportMode.MERGE -> restoreMerge(snapshot)
+        }
+    }
+
+    private suspend fun restoreReplace(snapshot: LedgerSnapshot) {
+        eventDao.deleteAll()
+        categoryDao.deleteAll()
+
+        val idMap = mutableMapOf<Long, Long>()
+        orderByDepth(snapshot.categories).forEach { category ->
+            val parentNewId = category.parentId?.let(idMap::get)
+            val entity = CategoryEntity(
+                id = category.id.coerceAtLeast(0L),
+                name = category.name.trim(),
+                parentId = parentNewId,
+                sortOrder = category.sortOrder,
+                colorHex = category.colorHex,
+                isSystem = category.isSystem,
+            )
+            val newId = categoryDao.insert(entity)
+            idMap[category.id] = newId
+        }
+        insertImportedEvents(snapshot.events, idMap)
+    }
+
+    private suspend fun restoreMerge(snapshot: LedgerSnapshot) {
+        val existing = categoryDao.getAll().toMutableList()
+        val system = existing.firstOrNull { it.isSystem }
+        val idMap = mutableMapOf<Long, Long>()
+
+        orderByDepth(snapshot.categories).forEach { category ->
+            val parentNewId = category.parentId?.let(idMap::get)
+            if (category.isSystem && system != null) {
+                idMap[category.id] = system.id
+                return@forEach
+            }
+            val reused = existing.firstOrNull {
+                it.name == category.name.trim() &&
+                    it.parentId == parentNewId &&
+                    it.isSystem == category.isSystem
+            }
+            if (reused != null) {
+                idMap[category.id] = reused.id
+            } else {
+                val newId = categoryDao.insert(
+                    CategoryEntity(
+                        name = category.name.trim(),
+                        parentId = parentNewId,
+                        sortOrder = category.sortOrder,
+                        colorHex = category.colorHex,
+                        isSystem = category.isSystem,
+                    ),
+                )
+                idMap[category.id] = newId
+                existing.add(
+                    CategoryEntity(
+                        id = newId,
+                        name = category.name.trim(),
+                        parentId = parentNewId,
+                        sortOrder = category.sortOrder,
+                        colorHex = category.colorHex,
+                        isSystem = category.isSystem,
+                    ),
+                )
+            }
+        }
+        insertImportedEvents(snapshot.events, idMap)
+    }
+
+    private suspend fun insertImportedEvents(
+        events: List<ExportedEvent>,
+        idMap: Map<Long, Long>,
+    ) {
+        val fallback = categoryDao.getSystemCategory()?.id
+            ?: categoryDao.insert(
+                CategoryEntity(
+                    name = "未分类",
+                    parentId = null,
+                    sortOrder = categoryDao.maxSortOrder(null) + 1,
+                    colorHex = 0xFF8C928C,
+                    isSystem = true,
+                ),
+            )
+        events.forEach { event ->
+            val startAt = event.startAt
+            val endAt = event.endAt.coerceAtLeast(startAt + 60_000L)
+            eventDao.insert(
+                EventEntity(
+                    note = event.note.cleanNote(),
+                    startAt = startAt,
+                    endAt = endAt,
+                    categoryId = idMap[event.categoryId] ?: fallback,
+                    createdAt = event.createdAt,
+                    updatedAt = event.updatedAt,
+                ),
+            )
+        }
+    }
+
+    /** 父分类先于子分类插入，避免外键失败；异常数据里的环按根处理。 */
+    private fun orderByDepth(categories: List<ExportedCategory>): List<ExportedCategory> {
+        val byId = categories.associateBy { it.id }
+        val depths = mutableMapOf<Long, Int>()
+
+        fun depthOf(id: Long, visiting: MutableSet<Long>): Int {
+            depths[id]?.let { return it }
+            if (!visiting.add(id)) return 0
+            val parentId = byId[id]?.parentId
+            val depth = if (parentId == null || parentId !in byId) {
+                0
+            } else {
+                depthOf(parentId, visiting) + 1
+            }
+            depths[id] = depth
+            return depth
+        }
+
+        return categories.sortedBy { depthOf(it.id, mutableSetOf()) }
+    }
+
+    private fun String?.cleanNote(): String? = this?.trim()?.ifEmpty { null }
 
     private fun CategoryEntity.toDomain(): Category = Category(
         id = id,
@@ -793,10 +1254,28 @@ class TimeLogRepository(private val database: AppDatabase) {
         createdAt = createdAt,
         updatedAt = updatedAt,
     )
+
+    private fun CategoryEntity.toExport(): ExportedCategory = ExportedCategory(
+        id = id,
+        name = name,
+        parentId = parentId,
+        sortOrder = sortOrder,
+        colorHex = colorHex,
+        isSystem = isSystem,
+    )
+
+    private fun EventEntity.toExport(): ExportedEvent = ExportedEvent(
+        note = note,
+        startAt = startAt,
+        endAt = endAt,
+        categoryId = categoryId,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+    )
 }
 
 sealed interface CategoryDeletionResult {
-    data class Deleted(val categoryCount: Int, val reassignedEventCount: Int) : CategoryDeletionResult
+    data class Deleted(val categoryCount: Int, val deletedEventCount: Int) : CategoryDeletionResult
     data object NotFound : CategoryDeletionResult
     data object SystemCategory : CategoryDeletionResult
 }
@@ -809,9 +1288,10 @@ package com.example.timelog.data.seed
 
 /**
  * 首次建库时写入的默认分类。固定主键是为了在同一个事务里安全地写入父子关系，
- * 同时给「未分类」一个稳定 ID，删除其它分类时可以把事件迁移过去。
+ * 同时给「未分类」一个稳定 ID（删除分类时会连同事件一起删除，系统分类仅作兜底展示）。
  *
  * 默认顺序：工作（沟通、执行）→ 休息（睡眠、放空）→ 学习（输入、输出）→ 娱乐（沉浸、社交）。
+ * 颜色取自 24 节气色板（[com.example.timelog.domain.model.SolarTermColors]），不显示节气名称。
  */
 data class SeedCategory(
     val id: Long,
@@ -824,21 +1304,585 @@ data class SeedCategory(
 
 object DefaultCategories {
     val all: List<SeedCategory> = listOf(
-        SeedCategory(1, "工作", null, 0, 0xFF3D6BDB),
-        SeedCategory(11, "执行", 1, 1, 0xFF4C7BE8),
-        SeedCategory(12, "沟通", 1, 0, 0xFF2F5DAF),
-        SeedCategory(2, "休息", null, 1, 0xFF8A63C9),
-        SeedCategory(21, "睡眠", 2, 0, 0xFF9C79D6),
-        SeedCategory(22, "放空", 2, 1, 0xFF7150A8),
-        SeedCategory(3, "学习", null, 2, 0xFFC07A2B),
-        SeedCategory(31, "输入", 3, 0, 0xFFD99445),
-        SeedCategory(32, "输出", 3, 1, 0xFF9E6220),
-        SeedCategory(4, "娱乐", null, 3, 0xFFB4654A),
-        SeedCategory(41, "社交", 4, 1, 0xFFCC7C5E),
-        SeedCategory(42, "沉浸", 4, 0, 0xFF8E4A35),
+        SeedCategory(1, "工作", null, 0, 0xFF5A7FA8),
+        SeedCategory(11, "执行", 1, 1, 0xFF3F5B78),
+        SeedCategory(12, "沟通", 1, 0, 0xFF8A9AB8),
+        SeedCategory(2, "休息", null, 1, 0xFF9E86B8),
+        SeedCategory(21, "睡眠", 2, 0, 0xFF8B72A6),
+        SeedCategory(22, "放空", 2, 1, 0xFF8A86A8),
+        SeedCategory(3, "学习", null, 2, 0xFFC9A24E),
+        SeedCategory(31, "输入", 3, 0, 0xFFB8933F),
+        SeedCategory(32, "输出", 3, 1, 0xFFA98A5A),
+        SeedCategory(4, "娱乐", null, 3, 0xFF94594A),
+        SeedCategory(41, "社交", 4, 1, 0xFFC46E4A),
+        SeedCategory(42, "沉浸", 4, 0, 0xFFA8463A),
         SeedCategory(5, "未分类", null, 4, 0xFF8C928C, isSystem = true),
     )
 }
+```
+
+## `app/src/main/java/com/example/timelog/data/transfer/TransferJson.kt`
+
+```kotlin
+package com.example.timelog.data.transfer
+
+import com.example.timelog.domain.model.ExportedCategory
+import com.example.timelog.domain.model.ExportedEvent
+import com.example.timelog.domain.model.LedgerSnapshot
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
+
+/**
+ * 备份文件的 JSON 编解码。
+ *
+ * 结构固定为 { schema: 1, exportedAt, categories: [...], events: [...] }，
+ * 只依赖 Android 自带的 org.json，不引入额外依赖。
+ *
+ * 读取失败统一抛 [IllegalArgumentException]（文案「不是有效的数据文件」），
+ * 方便调用方把 message 直接展示给用户；note 缺失 / 为空按 null 处理。
+ */
+object TransferJson {
+    private const val SCHEMA_VERSION = 1
+    private const val FALLBACK_COLOR = 0xFF9AA29A
+    private const val INVALID_MESSAGE = "不是有效的数据文件"
+
+    fun encode(snapshot: LedgerSnapshot): String {
+        val categories = JSONArray()
+        snapshot.categories.forEach { category ->
+            categories.put(
+                JSONObject().apply {
+                    put("id", category.id)
+                    put("name", category.name)
+                    if (category.parentId == null) {
+                        put("parentId", JSONObject.NULL)
+                    } else {
+                        put("parentId", category.parentId)
+                    }
+                    put("sortOrder", category.sortOrder)
+                    put("colorHex", category.colorHex)
+                    put("isSystem", category.isSystem)
+                },
+            )
+        }
+
+        val events = JSONArray()
+        snapshot.events.forEach { event ->
+            events.put(
+                JSONObject().apply {
+                    put("note", event.note ?: JSONObject.NULL)
+                    put("startAt", event.startAt)
+                    put("endAt", event.endAt)
+                    put("categoryId", event.categoryId)
+                    put("createdAt", event.createdAt)
+                    put("updatedAt", event.updatedAt)
+                },
+            )
+        }
+
+        return JSONObject().apply {
+            put("schema", SCHEMA_VERSION)
+            put("exportedAt", snapshot.exportedAt)
+            put("categories", categories)
+            put("events", events)
+        }.toString(2)
+    }
+
+    fun decode(text: String): LedgerSnapshot {
+        if (text.isBlank()) throw IllegalArgumentException(INVALID_MESSAGE)
+        return try {
+            readRoot(JSONObject(text))
+        } catch (error: JSONException) {
+            throw IllegalArgumentException(INVALID_MESSAGE, error)
+        }
+    }
+
+    private fun readRoot(root: JSONObject): LedgerSnapshot {
+        if (!root.has("schema") || root.isNull("schema")) invalid()
+        if (root.getInt("schema") != SCHEMA_VERSION) invalid()
+
+        val exportedAt = if (root.has("exportedAt") && !root.isNull("exportedAt")) {
+            root.getLong("exportedAt")
+        } else {
+            0L
+        }
+
+        val categoryArray = root.getJSONArray("categories")
+        val categories = buildList(categoryArray.length()) {
+            for (index in 0 until categoryArray.length()) {
+                add(categoryArray.getJSONObject(index).toCategory())
+            }
+        }
+
+        val eventArray = root.getJSONArray("events")
+        val events = buildList(eventArray.length()) {
+            for (index in 0 until eventArray.length()) {
+                add(eventArray.getJSONObject(index).toEvent())
+            }
+        }
+
+        return LedgerSnapshot(
+            exportedAt = exportedAt,
+            categories = categories,
+            events = events,
+        )
+    }
+
+    private fun JSONObject.toCategory(): ExportedCategory {
+        if (!has("id") || isNull("id")) invalid()
+        val name = optString("name").trim()
+        if (name.isEmpty()) invalid()
+        return ExportedCategory(
+            id = getLong("id"),
+            name = name,
+            parentId = if (has("parentId") && !isNull("parentId")) getLong("parentId") else null,
+            sortOrder = if (has("sortOrder") && !isNull("sortOrder")) getInt("sortOrder") else 0,
+            colorHex = if (has("colorHex") && !isNull("colorHex")) {
+                getLong("colorHex")
+            } else {
+                FALLBACK_COLOR
+            },
+            isSystem = has("isSystem") && !isNull("isSystem") && getBoolean("isSystem"),
+        )
+    }
+
+    private fun JSONObject.toEvent(): ExportedEvent {
+        if (!has("startAt") || isNull("startAt")) invalid()
+        if (!has("endAt") || isNull("endAt")) invalid()
+        if (!has("categoryId") || isNull("categoryId")) invalid()
+
+        val startAt = getLong("startAt")
+        val endAt = getLong("endAt")
+        if (endAt < startAt) invalid()
+        val createdAt = if (has("createdAt") && !isNull("createdAt")) getLong("createdAt") else startAt
+        val updatedAt = if (has("updatedAt") && !isNull("updatedAt")) getLong("updatedAt") else createdAt
+
+        return ExportedEvent(
+            note = noteOrNull(),
+            startAt = startAt,
+            endAt = endAt,
+            categoryId = getLong("categoryId"),
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+        )
+    }
+
+    /** 备注缺失、为 JSON null 或空白时都按 null 处理，与仓库保存时的清洗规则一致。 */
+    private fun JSONObject.noteOrNull(): String? {
+        if (!has("note") || isNull("note")) return null
+        return optString("note").trim().ifEmpty { null }
+    }
+
+    private fun invalid(): Nothing = throw IllegalArgumentException(INVALID_MESSAGE)
+}
+```
+
+## `app/src/main/java/com/example/timelog/domain/OverlapResolver.kt`
+
+```kotlin
+package com.example.timelog.domain
+
+import com.example.timelog.domain.model.Event
+
+/**
+ * 目标区间（用户正在保存的这一段）与已有记录冲突时的处理方案。
+ *
+ * 语义：目标区间优先，老记录让路。
+ * - 老记录被目标区间整个盖住 → [OverlapPlan.victims]，要用户确认后才删除；
+ * - 老记录只在一侧超出 → [OverlapPlan.updates] 把超出的那一侧裁掉；
+ * - 老记录两侧都超出 → update 保留左侧残余，clones 复制出右侧残余；
+ * - 首尾相接（老记录 end == 目标 start 等）或没有交集 → 原样不动。
+ */
+data class OverlapUpdate(val event: Event, val startAt: Long, val endAt: Long)
+
+/** 老记录横跨目标区间两侧时，右侧残余被复制成的新记录；左侧残余由 [OverlapUpdate] 原地保留。 */
+data class OverlapClone(
+    val note: String?,
+    val startAt: Long,
+    val endAt: Long,
+    val categoryId: Long,
+    val createdAt: Long,
+)
+
+/** [resolveOverlap] 的结果：updates / clones 静默生效，victims 需要用户确认。 */
+data class OverlapPlan(
+    val updates: List<OverlapUpdate> = emptyList(),
+    val clones: List<OverlapClone> = emptyList(),
+    val victims: List<Event> = emptyList(),
+)
+
+/**
+ * 计算把 [startAt, endAt) 写进时间轴时，其余记录 [others] 该怎么让路。
+ *
+ * 区间按半开区间 [start, end) 处理：老记录的 end == 目标 start（或反之）不算重叠。
+ * 目标区间非法（endAt <= startAt）时返回空方案；零宽 / 负宽的老记录直接跳过。
+ */
+fun resolveOverlap(startAt: Long, endAt: Long, others: List<Event>): OverlapPlan {
+    if (endAt <= startAt) return OverlapPlan()
+
+    val updates = mutableListOf<OverlapUpdate>()
+    val clones = mutableListOf<OverlapClone>()
+    val victims = mutableListOf<Event>()
+
+    others.forEach { other ->
+        val otherStart = other.startAt
+        val otherEnd = other.endAt
+        // 脏数据（零宽 / 负宽）和首尾相接都不算重叠。
+        if (otherEnd <= otherStart) return@forEach
+        if (otherStart >= endAt || otherEnd <= startAt) return@forEach
+
+        val keepsLeft = otherStart < startAt
+        val keepsRight = otherEnd > endAt
+        when {
+            keepsLeft && keepsRight -> {
+                updates += OverlapUpdate(other, otherStart, startAt)
+                clones += OverlapClone(
+                    note = other.note,
+                    startAt = endAt,
+                    endAt = otherEnd,
+                    categoryId = other.categoryId,
+                    createdAt = other.createdAt,
+                )
+            }
+
+            keepsLeft -> updates += OverlapUpdate(other, otherStart, startAt)
+            keepsRight -> updates += OverlapUpdate(other, endAt, otherEnd)
+            else -> victims += other
+        }
+    }
+
+    return OverlapPlan(updates = updates, clones = clones, victims = victims)
+}
+```
+
+## `app/src/main/java/com/example/timelog/domain/Statistics.kt`
+
+```kotlin
+package com.example.timelog.domain
+
+import com.example.timelog.domain.model.CategoryNode
+import com.example.timelog.domain.model.CategoryTree
+import com.example.timelog.domain.model.TimelineEvent
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.TemporalAdjusters
+
+/** 统计页的 5 种查看方式：日 / 周 / 月 / 年 / 自定义。 */
+enum class StatsMode { DAY, WEEK, MONTH, YEAR, CUSTOM }
+
+/** 统计窗口，半开区间 [startAt, endAt)，时间戳按本地时区解释。 */
+data class StatsWindow(
+    val mode: StatsMode,
+    val startAt: Long,
+    val endAt: Long,
+)
+
+/**
+ * 由 [StatsMode] 推出具体窗口，并支持前后翻页。
+ *
+ * 全部计算都依赖显式传入的 [ZoneId]，不读取系统时区。
+ */
+object StatsWindows {
+
+    /**
+     * [anchor] 所在周期的窗口。
+     *
+     * - DAY：当天
+     * - WEEK：周一 00:00 到下周一 00:00（以周一为一周首日）
+     * - MONTH：当月 1 日到下月 1 日
+     * - YEAR：当年 1 月 1 日到次年 1 月 1 日
+     * - CUSTOM：没有自然周期，按 [anchor] 单日返回；自定义范围请用 [custom]
+     */
+    fun of(mode: StatsMode, anchor: LocalDate, zone: ZoneId): StatsWindow = when (mode) {
+        StatsMode.DAY -> window(StatsMode.DAY, anchor, anchor.plusDays(1), zone)
+        StatsMode.WEEK -> {
+            val monday = anchor.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            window(StatsMode.WEEK, monday, monday.plusWeeks(1), zone)
+        }
+        StatsMode.MONTH -> {
+            val firstDay = anchor.withDayOfMonth(1)
+            window(StatsMode.MONTH, firstDay, firstDay.plusMonths(1), zone)
+        }
+        StatsMode.YEAR -> {
+            val firstDay = anchor.withDayOfYear(1)
+            window(StatsMode.YEAR, firstDay, firstDay.plusYears(1), zone)
+        }
+        StatsMode.CUSTOM -> window(StatsMode.CUSTOM, anchor, anchor.plusDays(1), zone)
+    }
+
+    /** 闭区间日期 [startDate]..[endDate] 对应的自定义窗口；结束早于起始时自动交换。 */
+    fun custom(startDate: LocalDate, endDate: LocalDate, zone: ZoneId): StatsWindow {
+        val start = if (endDate.isBefore(startDate)) endDate else startDate
+        val end = if (endDate.isBefore(startDate)) startDate else endDate
+        return window(StatsMode.CUSTOM, start, end.plusDays(1), zone)
+    }
+
+    /**
+     * 前后平移 [steps] 个周期（负数向前）。
+     *
+     * DAY / WEEK / MONTH / YEAR 按窗口起始日做日历加减，CUSTOM 按窗口长度（毫秒）平移。
+     */
+    fun shift(window: StatsWindow, steps: Int, zone: ZoneId): StatsWindow {
+        if (steps == 0) return window
+        return when (window.mode) {
+            StatsMode.DAY -> of(StatsMode.DAY, dateOf(window.startAt, zone).plusDays(steps.toLong()), zone)
+            StatsMode.WEEK -> of(StatsMode.WEEK, dateOf(window.startAt, zone).plusWeeks(steps.toLong()), zone)
+            StatsMode.MONTH -> of(StatsMode.MONTH, dateOf(window.startAt, zone).plusMonths(steps.toLong()), zone)
+            StatsMode.YEAR -> of(StatsMode.YEAR, dateOf(window.startAt, zone).plusYears(steps.toLong()), zone)
+            StatsMode.CUSTOM -> {
+                val length = window.endAt - window.startAt
+                val start = window.startAt + length * steps
+                StatsWindow(StatsMode.CUSTOM, start, start + length)
+            }
+        }
+    }
+
+    /** 本地日期对应的当天零点时间戳。 */
+    internal fun startOfDay(date: LocalDate, zone: ZoneId): Long =
+        date.atStartOfDay(zone).toInstant().toEpochMilli()
+
+    /** 时间戳在 [zone] 下的本地日期。 */
+    internal fun dateOf(epochMillis: Long, zone: ZoneId): LocalDate =
+        Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate()
+
+    private fun window(
+        mode: StatsMode,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        zone: ZoneId,
+    ): StatsWindow = StatsWindow(mode, startOfDay(startDate, zone), startOfDay(endDate, zone))
+}
+
+/**
+ * 一个分类（含全部子类）在统计窗口内的用时。
+ *
+ * 环形图只画前 [StatsBuilder.MAX_DEPTH] 层，[children] 也按此截断；
+ * 更深的分类时长已计入所属祖先的 [millis]。
+ */
+data class CategoryUsage(
+    val categoryId: Long,
+    val name: String,
+    val colorHex: Long,
+    val millis: Long,
+    val eventCount: Int,
+    val depth: Int,
+    /** 与当前窗口等长、同模式的上一个窗口里同一分类（含子类）的总时长。 */
+    val previousMillis: Long = 0L,
+    val children: List<CategoryUsage> = emptyList(),
+) {
+    /** 环比变化；[previousMillis] 为 0（新增分类）时为 null。 */
+    val deltaRatio: Float?
+        get() = if (previousMillis > 0L) {
+            (millis - previousMillis).toFloat() / previousMillis
+        } else {
+            null
+        }
+}
+
+/** 统计结果：窗口、总量与按层级组织的分类用时。 */
+data class StatsSummary(
+    val window: StatsWindow,
+    val totalMillis: Long,
+    val eventCount: Int,
+    /** 根分类（depth = 0），按用时降序；tree 中不存在的分类合成在最后。 */
+    val roots: List<CategoryUsage>,
+    /** 等长同模式上一个窗口的总时长（对齐已过时长，见 [StatsBuilder.build]）。 */
+    val previousTotalMillis: Long,
+)
+
+/**
+ * 把事件列表聚合成 [StatsSummary]。
+ *
+ * 纯函数：所有时间相关输入（[window]、[now]、[zone]）都由参数传入。
+ */
+object StatsBuilder {
+
+    /** 环形图最多呈现三层：根分类、二级、三级。 */
+    const val MAX_DEPTH: Int = 3
+
+    /** tree 中找不到分类时，合成根使用的分类 ID。 */
+    const val ORPHAN_CATEGORY_ID: Long = -1L
+
+    private const val FALLBACK_COLOR = 0xFF9AA29A
+    private const val PATH_SEPARATOR = " / "
+    private const val UNKNOWN_NAME = "未分类"
+
+    fun build(
+        events: List<TimelineEvent>,
+        tree: CategoryTree,
+        window: StatsWindow,
+        now: Long,
+        zone: ZoneId,
+    ): StatsSummary {
+        val current = aggregate(clip(events, window.startAt, minOf(window.endAt, now)), tree)
+        val previousWindow = previousWindowOf(window, now, zone)
+        val previous = aggregate(
+            clip(events, previousWindow.startAt, minOf(previousWindow.endAt, now)),
+            tree,
+        )
+
+        val currentTotals = subtreeTotals(tree, current)
+        val previousTotals = subtreeTotals(tree, previous)
+
+        val roots = tree.roots
+            .mapNotNull { node -> usageOf(node, 0, currentTotals, previousTotals) }
+            .sortedWith(USAGE_ORDER)
+
+        return StatsSummary(
+            window = window,
+            totalMillis = current.totalMillis,
+            eventCount = current.eventCount,
+            roots = roots + orphanUsages(current, previous),
+            previousTotalMillis = previous.totalMillis,
+        )
+    }
+
+    /** 与 [window] 等长、同模式的上一个窗口；当前窗口包含 [now] 时对齐到已过时长。 */
+    private fun previousWindowOf(window: StatsWindow, now: Long, zone: ZoneId): StatsWindow {
+        val previous = StatsWindows.shift(window, -1, zone)
+        if (now < window.startAt || now >= window.endAt) return previous
+        val elapsed = now - window.startAt
+        val alignedEnd = previous.startAt + elapsed
+        return if (alignedEnd < previous.endAt) previous.copy(endAt = alignedEnd) else previous
+    }
+
+    private fun clip(events: List<TimelineEvent>, from: Long, until: Long): List<ClippedEvent> {
+        if (until <= from) return emptyList()
+        return events.mapNotNull { event ->
+            val start = maxOf(event.event.startAt, from)
+            val end = minOf(event.event.startAt + event.event.durationMillis, until)
+            if (end <= start) null else ClippedEvent(event, start, end)
+        }
+    }
+
+    private fun aggregate(clipped: List<ClippedEvent>, tree: CategoryTree): Aggregate {
+        val directMillis = HashMap<Long, Long>()
+        val directCounts = HashMap<Long, Int>()
+        val orphanMillis = HashMap<String, Long>()
+        val orphanCounts = HashMap<String, Int>()
+        val orphanColors = HashMap<String, Long>()
+        var totalMillis = 0L
+
+        clipped
+            .sortedWith(compareBy({ it.event.event.startAt }, { it.event.event.id }))
+            .forEach { item ->
+                val duration = item.end - item.start
+                totalMillis += duration
+                val categoryId = item.event.event.categoryId
+                if (tree.find(categoryId) != null) {
+                    directMillis[categoryId] = (directMillis[categoryId] ?: 0L) + duration
+                    directCounts[categoryId] = (directCounts[categoryId] ?: 0) + 1
+                } else {
+                    val name = orphanName(item.event.categoryPath)
+                    orphanMillis[name] = (orphanMillis[name] ?: 0L) + duration
+                    orphanCounts[name] = (orphanCounts[name] ?: 0) + 1
+                    orphanColors.putIfAbsent(name, item.event.categoryColor)
+                }
+            }
+
+        return Aggregate(
+            directMillis = directMillis,
+            directCounts = directCounts,
+            orphanMillis = orphanMillis,
+            orphanCounts = orphanCounts,
+            orphanColors = orphanColors,
+            totalMillis = totalMillis,
+            eventCount = clipped.size,
+        )
+    }
+
+    /** 沿分类树自下而上累计时长与次数（含全部层级，供环形图的最内层使用）。 */
+    private fun subtreeTotals(tree: CategoryTree, aggregate: Aggregate): SubtreeTotals {
+        val millis = HashMap<Long, Long>()
+        val counts = HashMap<Long, Int>()
+
+        fun walk(node: CategoryNode): Pair<Long, Int> {
+            var totalMillis = aggregate.directMillis[node.category.id] ?: 0L
+            var totalCount = aggregate.directCounts[node.category.id] ?: 0
+            node.children.forEach { child ->
+                val (childMillis, childCount) = walk(child)
+                totalMillis += childMillis
+                totalCount += childCount
+            }
+            millis[node.category.id] = totalMillis
+            counts[node.category.id] = totalCount
+            return totalMillis to totalCount
+        }
+
+        tree.roots.forEach { walk(it) }
+        return SubtreeTotals(millis, counts)
+    }
+
+    private fun usageOf(
+        node: CategoryNode,
+        depth: Int,
+        totals: SubtreeTotals,
+        previousTotals: SubtreeTotals,
+    ): CategoryUsage? {
+        val millis = totals.millis[node.category.id] ?: 0L
+        if (millis <= 0L) return null
+        val children = if (depth < MAX_DEPTH - 1) {
+            node.children
+                .mapNotNull { child -> usageOf(child, depth + 1, totals, previousTotals) }
+                .sortedWith(USAGE_ORDER)
+        } else {
+            emptyList()
+        }
+        return CategoryUsage(
+            categoryId = node.category.id,
+            name = node.category.name,
+            colorHex = node.category.colorHex,
+            millis = millis,
+            eventCount = totals.counts[node.category.id] ?: 0,
+            depth = depth,
+            previousMillis = previousTotals.millis[node.category.id] ?: 0L,
+            children = children,
+        )
+    }
+
+    private fun orphanUsages(current: Aggregate, previous: Aggregate): List<CategoryUsage> =
+        current.orphanMillis.map { (name, millis) ->
+            CategoryUsage(
+                categoryId = ORPHAN_CATEGORY_ID,
+                name = name,
+                colorHex = current.orphanColors[name] ?: FALLBACK_COLOR,
+                millis = millis,
+                eventCount = current.orphanCounts[name] ?: 0,
+                depth = 0,
+                previousMillis = previous.orphanMillis[name] ?: 0L,
+                children = emptyList(),
+            )
+        }.sortedWith(USAGE_ORDER)
+
+    private fun orphanName(categoryPath: String): String {
+        val separator = categoryPath.indexOf(PATH_SEPARATOR)
+        val head = if (separator < 0) categoryPath else categoryPath.substring(0, separator)
+        return head.ifBlank { UNKNOWN_NAME }
+    }
+}
+
+private data class ClippedEvent(val event: TimelineEvent, val start: Long, val end: Long)
+
+private class Aggregate(
+    val directMillis: Map<Long, Long>,
+    val directCounts: Map<Long, Int>,
+    val orphanMillis: Map<String, Long>,
+    val orphanCounts: Map<String, Int>,
+    val orphanColors: Map<String, Long>,
+    val totalMillis: Long,
+    val eventCount: Int,
+)
+
+private class SubtreeTotals(
+    val millis: Map<Long, Long>,
+    val counts: Map<Long, Int>,
+)
+
+/** 分类用时排序：时长降序，再看名称，保证渲染顺序稳定。 */
+private val USAGE_ORDER: Comparator<CategoryUsage> =
+    compareByDescending<CategoryUsage> { it.millis }.thenBy { it.name }
 ```
 
 ## `app/src/main/java/com/example/timelog/domain/model/Category.kt`
@@ -854,6 +1898,57 @@ data class Category(
     val colorHex: Long,
     val isSystem: Boolean = false,
 )
+```
+
+## `app/src/main/java/com/example/timelog/domain/model/CategoryPalette.kt`
+
+```kotlin
+package com.example.timelog.domain.model
+
+/**
+ * 二十四节气颜色：按「春夏秋冬各 6 个节气」排列，分类颜色选择器按 4 行 6 列展示，
+ * 颜色下方标注节气名。颜色整体压低饱和度，保证在纸色背景上与墨色文字同时成立；
+ * 深色模式复用同一组色值。
+ */
+data class SolarTermColor(
+    val name: String,
+    val season: String,
+    val colorHex: Long,
+)
+
+val SolarTerms: List<SolarTermColor> = listOf(
+    SolarTermColor("立春", "春", 0xFF7D9E6E),
+    SolarTermColor("雨水", "春", 0xFF6E97A3),
+    SolarTermColor("惊蛰", "春", 0xFF5E9C90),
+    SolarTermColor("春分", "春", 0xFFC48E8E),
+    SolarTermColor("清明", "春", 0xFF8B72A6),
+    SolarTermColor("谷雨", "春", 0xFFA98A5A),
+    SolarTermColor("立夏", "夏", 0xFF6E9A4C),
+    SolarTermColor("小满", "夏", 0xFFB8933F),
+    SolarTermColor("芒种", "夏", 0xFF8C9A46),
+    SolarTermColor("夏至", "夏", 0xFFC9853F),
+    SolarTermColor("小暑", "夏", 0xFFC46E4A),
+    SolarTermColor("大暑", "夏", 0xFFA8463A),
+    SolarTermColor("立秋", "秋", 0xFFB99A50),
+    SolarTermColor("处暑", "秋", 0xFF9E86B8),
+    SolarTermColor("白露", "秋", 0xFF8A9AB8),
+    SolarTermColor("秋分", "秋", 0xFFC9A24E),
+    SolarTermColor("寒露", "秋", 0xFF5A7FA8),
+    SolarTermColor("霜降", "秋", 0xFF94594A),
+    SolarTermColor("立冬", "冬", 0xFF4E7368),
+    SolarTermColor("小雪", "冬", 0xFF8A86A8),
+    SolarTermColor("大雪", "冬", 0xFF62788E),
+    SolarTermColor("冬至", "冬", 0xFF3F5B78),
+    SolarTermColor("小寒", "冬", 0xFF557E92),
+    SolarTermColor("大寒", "冬", 0xFF35505F),
+)
+
+/** 兼容旧接口：仅取色值。 */
+val SolarTermColors: List<Long> = SolarTerms.map { it.colorHex }
+
+/** 四季顺序，供 4 行 6 列色板使用。 */
+val SolarTermSeasons: List<Pair<String, List<SolarTermColor>>> =
+    listOf("春", "夏", "秋", "冬").map { season -> season to SolarTerms.filter { it.season == season } }
 ```
 
 ## `app/src/main/java/com/example/timelog/domain/model/CategoryTree.kt`
@@ -968,6 +2063,39 @@ data class TimelineEvent(
     val categoryPath: String,
     val categoryColor: Long,
 )
+```
+
+## `app/src/main/java/com/example/timelog/domain/model/LedgerSnapshot.kt`
+
+```kotlin
+package com.example.timelog.domain.model
+
+/** 导入 / 导出用的完整数据快照，与数据库实体解耦，方便用 JSON 表达。 */
+data class LedgerSnapshot(
+    val exportedAt: Long,
+    val categories: List<ExportedCategory>,
+    val events: List<ExportedEvent>,
+)
+
+data class ExportedCategory(
+    val id: Long,
+    val name: String,
+    val parentId: Long?,
+    val sortOrder: Int,
+    val colorHex: Long,
+    val isSystem: Boolean,
+)
+
+data class ExportedEvent(
+    val note: String?,
+    val startAt: Long,
+    val endAt: Long,
+    val categoryId: Long,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+enum class ImportMode { MERGE, REPLACE }
 ```
 
 ## `app/src/main/java/com/example/timelog/domain/model/Timeline.kt`
@@ -1160,18 +2288,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.timelog.domain.model.CategoryNode
+import com.example.timelog.domain.model.SolarTermSeasons
 import com.example.timelog.ui.home.CategoryDot
-
-private val EditorColors = listOf(
-    0xFF3D6BDB,
-    0xFF2F8F5B,
-    0xFFC07A2B,
-    0xFF8A63C9,
-    0xFFB4654A,
-    0xFF2F7E8F,
-    0xFF8C928C,
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1236,7 +2356,7 @@ fun CategoryManageScreen(
         ) {
             item(key = "hint") {
                 Text(
-                    text = "分类最多 3 层。删除分类时，其中的事件会移到「未分类」。",
+                    text = "分类最多 3 层。删除分类时，其中的事件会一并删除。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 8.dp),
@@ -1287,15 +2407,10 @@ fun CategoryManageScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        EditorColors.forEach { colorHex ->
-                            ColorSwatch(
-                                colorHex = colorHex,
-                                selected = colorHex == editor.colorHex,
-                                onClick = { onEditorColorChange(colorHex) },
-                            )
-                        }
-                    }
+                    SolarTermPalette(
+                        selectedHex = editor.colorHex,
+                        onSelect = onEditorColorChange,
+                    )
                 }
             },
             confirmButton = {
@@ -1323,7 +2438,7 @@ fun CategoryManageScreen(
                     buildString {
                         append("「${pending.node.category.name}」及其子分类会被删除。")
                         if (pending.eventCount > 0) {
-                            append("${pending.eventCount} 条事件会移动到「未分类」，不会丢失。")
+                            append("其中 ${pending.eventCount} 条事件会一并删除。")
                         }
                         append("此操作无法撤销。")
                     },
@@ -1374,13 +2489,6 @@ private fun CategoryRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (node.children.isNotEmpty()) {
-                Text(
-                    text = "${node.children.size} 个子分类",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
         if (node.category.isSystem) {
             Text(
@@ -1413,11 +2521,54 @@ private fun CategoryRow(
     }
 }
 
+/** 24 节气色板：4 行（春夏秋冬）× 6 列，颜色下方标注节气名。 */
+@Composable
+private fun SolarTermPalette(selectedHex: Long, onSelect: (Long) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SolarTermSeasons.forEach { (season, terms) ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = season,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .width(20.dp)
+                        .padding(top = 7.dp),
+                )
+                terms.forEach { term ->
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        ColorSwatch(
+                            colorHex = term.colorHex,
+                            selected = term.colorHex == selectedHex,
+                            onClick = { onSelect(term.colorHex) },
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = term.name,
+                            fontSize = 9.sp,
+                            lineHeight = 11.sp,
+                            maxLines = 1,
+                            color = if (term.colorHex == selectedHex) {
+                                MaterialTheme.colorScheme.onBackground
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ColorSwatch(colorHex: Long, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(30.dp)
+            .size(28.dp)
             .clip(CircleShape)
             .background(Color(colorHex), CircleShape)
             .border(
@@ -1444,6 +2595,7 @@ import com.example.timelog.data.repository.CategoryDeletionResult
 import com.example.timelog.data.repository.TimeLogRepository
 import com.example.timelog.domain.model.CategoryNode
 import com.example.timelog.domain.model.CategoryTree
+import com.example.timelog.domain.model.SolarTermColors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -1512,7 +2664,7 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
                     parentId = parent?.category?.id,
                     parentName = parent?.category?.name,
                     name = "",
-                    colorHex = DEFAULT_COLORS.random(),
+                    colorHex = SolarTermColors.random(),
                 ),
             )
         }
@@ -1584,12 +2736,12 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         viewModelScope.launch {
             val message = when (val outcome = repository.deleteCategory(pending.node.category.id)) {
                 is CategoryDeletionResult.Deleted -> {
-                    val moved = if (outcome.reassignedEventCount > 0) {
-                        "，${outcome.reassignedEventCount} 条事件移到「未分类」"
+                    val deleted = if (outcome.deletedEventCount > 0) {
+                        "，${outcome.deletedEventCount} 条事件"
                     } else {
                         ""
                     }
-                    "已删除 ${outcome.categoryCount} 个分类$moved"
+                    "已删除 ${outcome.categoryCount} 个分类$deleted"
                 }
 
                 CategoryDeletionResult.NotFound -> "分类已不存在"
@@ -1605,18 +2757,383 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
 
     companion object {
         private const val MAX_DEPTH = 2
-        private val DEFAULT_COLORS = listOf(
-            0xFF3D6BDB,
-            0xFF2F8F5B,
-            0xFFC07A2B,
-            0xFF8A63C9,
-            0xFFB4654A,
-            0xFF2F7E8F,
-        )
 
         fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
             initializer { CategoryManageViewModel(repository) }
         }
+    }
+}
+```
+
+## `app/src/main/java/com/example/timelog/ui/data/DataTransferSection.kt`
+
+```kotlin
+package com.example.timelog.ui.data
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.timelog.domain.model.ImportMode
+import com.example.timelog.util.DateTimeFormat
+
+/** 打开 SAF 文件选择器时接受的 MIME：不同文件管理器对 .json 的声明不一致，多给几个。 */
+private val ImportMimeTypes = arrayOf(
+    "application/json",
+    "text/plain",
+    "application/octet-stream",
+)
+
+/**
+ * 「数据」卡片：导出数据（SAF 新建 .json）与导入数据（先选文件，再选导入方式）。
+ * 具体的读写逻辑全部在 [DataTransferViewModel] 里，这里只负责 SAF 交互和状态展示。
+ */
+@Composable
+fun DataTransferSection(
+    viewModel: DataTransferViewModel,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 24.dp),
+) {
+    val context = LocalContext.current
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var showImportChooser by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) viewModel.export(context, uri)
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            pendingImportUri = uri
+            showImportChooser = true
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(contentPadding),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "数据",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.weight(1f))
+                if (state.busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "导出为 JSON 备份，或从备份文件恢复记录。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TransferButton(
+                    text = "导出数据",
+                    enabled = !state.busy,
+                    filled = true,
+                    onClick = {
+                        val fileName = "時-" +
+                            DateTimeFormat.isoDate(System.currentTimeMillis()) + ".json"
+                        exportLauncher.launch(fileName)
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                TransferButton(
+                    text = "导入数据",
+                    enabled = !state.busy,
+                    filled = false,
+                    onClick = { importLauncher.launch(ImportMimeTypes) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            state.message?.let { message ->
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (state.isError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
+            }
+        }
+    }
+
+    if (showImportChooser) {
+        ImportModeDialog(
+            onDismiss = {
+                showImportChooser = false
+                pendingImportUri = null
+            },
+            onSelect = { mode ->
+                val uri = pendingImportUri
+                showImportChooser = false
+                pendingImportUri = null
+                if (uri != null) viewModel.import(context, uri, mode)
+            },
+        )
+    }
+}
+
+@Composable
+private fun TransferButton(
+    text: String,
+    enabled: Boolean,
+    filled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (filled) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.height(44.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.height(44.dp),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        ) {
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+private fun ImportModeDialog(
+    onDismiss: () -> Unit,
+    onSelect: (ImportMode) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导入数据") },
+        text = {
+            Column {
+                ImportModeOption(
+                    title = "合并导入",
+                    description = "保留现有数据，重名分类会新建。",
+                    warning = false,
+                    onClick = { onSelect(ImportMode.MERGE) },
+                )
+                Spacer(Modifier.height(10.dp))
+                ImportModeOption(
+                    title = "覆盖导入",
+                    description = "清空现有全部记录后导入，此操作无法撤销。",
+                    warning = true,
+                    onClick = { onSelect(ImportMode.REPLACE) },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
+private fun ImportModeOption(
+    title: String,
+    description: String,
+    warning: Boolean,
+    onClick: () -> Unit,
+) {
+    val accent = if (warning) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = accent.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = accent,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+```
+
+## `app/src/main/java/com/example/timelog/ui/data/DataTransferViewModel.kt`
+
+```kotlin
+package com.example.timelog.ui.data
+
+import android.content.Context
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.timelog.data.repository.TimeLogRepository
+import com.example.timelog.data.transfer.TransferJson
+import com.example.timelog.domain.model.ImportMode
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** 导入 / 导出的状态：busy 期间按钮禁用，message 直接显示在卡片里。 */
+data class DataTransferState(
+    val busy: Boolean = false,
+    val message: String? = null,
+    val isError: Boolean = false,
+)
+
+/**
+ * SAF（Storage Access Framework）文件读写 + 仓库快照 / 恢复。
+ *
+ * 导出：repository.snapshot() -> TransferJson.encode -> contentResolver.openOutputStream
+ * 导入：contentResolver.openInputStream -> TransferJson.decode -> repository.restore
+ * 文件读写都放在 Dispatchers.IO，UI 线程只更新状态。
+ */
+class DataTransferViewModel(private val repository: TimeLogRepository) : ViewModel() {
+
+    private val _state = MutableStateFlow(DataTransferState())
+    val state: StateFlow<DataTransferState> = _state.asStateFlow()
+
+    fun export(context: Context, uri: Uri) {
+        if (_state.value.busy) return
+        _state.update { it.copy(busy = true, message = null, isError = false) }
+        val appContext = context.applicationContext ?: context
+        viewModelScope.launch {
+            val error = withContext(Dispatchers.IO) {
+                runCatching {
+                    val json = TransferJson.encode(repository.snapshot())
+                    val output = appContext.contentResolver.openOutputStream(uri)
+                        ?: throw IOException("无法打开目标文件")
+                    output.use { stream ->
+                        stream.write(json.toByteArray(Charsets.UTF_8))
+                        stream.flush()
+                    }
+                }.exceptionOrNull()
+            }
+            if (error == null) {
+                _state.update { it.copy(busy = false, message = "已导出", isError = false) }
+            } else {
+                _state.update { it.copy(busy = false, message = exportMessage(error), isError = true) }
+            }
+        }
+    }
+
+    fun import(context: Context, uri: Uri, mode: ImportMode) {
+        if (_state.value.busy) return
+        _state.update { it.copy(busy = true, message = null, isError = false) }
+        val appContext = context.applicationContext ?: context
+        viewModelScope.launch {
+            val error = withContext(Dispatchers.IO) {
+                runCatching {
+                    val input = appContext.contentResolver.openInputStream(uri)
+                        ?: throw IOException("无法打开所选文件")
+                    val text = input.use { stream -> stream.readBytes().toString(Charsets.UTF_8) }
+                    val snapshot = TransferJson.decode(text)
+                    repository.restore(snapshot, mode)
+                }.exceptionOrNull()
+            }
+            if (error == null) {
+                _state.update { it.copy(busy = false, message = "已导入", isError = false) }
+            } else {
+                _state.update { it.copy(busy = false, message = importMessage(error), isError = true) }
+            }
+        }
+    }
+
+    private fun exportMessage(error: Throwable): String =
+        if (error is SecurityException) "没有访问该文件的权限" else "导出失败，请重试"
+
+    private fun importMessage(error: Throwable): String {
+        if (error is SecurityException) return "没有访问该文件的权限"
+        val message = (error as? IllegalArgumentException)?.message
+        if (!message.isNullOrBlank()) return message
+        return "导入失败，请重试"
+    }
+
+    companion object {
+        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    DataTransferViewModel(repository) as T
+            }
     }
 }
 ```
@@ -1627,6 +3144,7 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
 package com.example.timelog.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1643,15 +3161,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -1663,38 +3178,41 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.timelog.ui.theme.ActionBlue
 import com.example.timelog.ui.theme.Clay
 import com.example.timelog.util.DateTimeFormat
 
+/**
+ * 时间轴页：不再自带 Scaffold / 顶栏 / 底栏，外壳（MainActivity）统一提供页签与右下角「+」按钮，
+ * 这样时间轴与统计页可以放在同一个 HorizontalPager 里左右滑动切换。
+ */
 @Composable
-fun HomeScreen(
+fun TimelinePage(
     state: HomeUiState,
-    onNewRecord: () -> Unit,
-    onOpenCategories: () -> Unit,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
     onFillGap: (Long, Long) -> Unit,
     onDismissDelete: () -> Unit,
     onConfirmDelete: () -> Unit,
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = { HomeHeader(onOpenCategories = onOpenCategories) },
-        bottomBar = { RecordBar(onNewRecord = onNewRecord) },
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            when {
-                state.isLoading -> Unit
-                state.days.isEmpty() -> EmptyTimeline()
-                else -> TimelineList(
-                    days = state.days,
-                    onEventClick = onEventClick,
-                    onEventLongClick = onEventLongClick,
-                    onFillGap = onFillGap,
-                )
-            }
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            state.isLoading -> Unit
+            state.days.isEmpty() -> EmptyTimeline()
+            else -> TimelineList(
+                days = state.days,
+                uncategorizedName = state.uncategorized?.name ?: "未分类",
+                uncategorizedColor = state.uncategorized?.colorHex,
+                onEventClick = onEventClick,
+                onEventLongClick = onEventLongClick,
+                onFillGap = onFillGap,
+            )
         }
     }
 
@@ -1730,46 +3248,33 @@ fun HomeScreen(
     }
 }
 
+/**
+ * 时间轴页右下角的悬浮加号：蓝底圆圈 + 白色「+」，点击新建记录。
+ * 由外壳（MainActivity）叠加在时间轴页之上；列表底部已预留 96dp，避免遮住最后一条记录。
+ */
 @Composable
-private fun HomeHeader(onOpenCategories: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "時計",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onOpenCategories) {
-            Text("分类", color = MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun RecordBar(onNewRecord: () -> Unit) {
+fun TimelineFabOverlay(onNewRecord: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomEnd,
     ) {
-        Button(
-            onClick = onNewRecord,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ),
+        Box(
+            modifier = Modifier
+                .padding(end = 24.dp, bottom = 24.dp)
+                .navigationBarsPadding()
+                .size(62.dp)
+                .shadow(8.dp, CircleShape)
+                .clip(CircleShape)
+                .background(ActionBlue)
+                .clickable(role = Role.Button, onClick = onNewRecord),
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("完成", style = MaterialTheme.typography.titleMedium)
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = "新建记录",
+                tint = Color.White,
+                modifier = Modifier.size(30.dp),
+            )
         }
     }
 }
@@ -1787,7 +3292,7 @@ private fun EmptyTimeline() {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "点下方的「完成」，记下刚刚做完的事。",
+            text = "点右下角的 +，记下刚刚做完的事。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1797,13 +3302,15 @@ private fun EmptyTimeline() {
 @Composable
 private fun TimelineList(
     days: List<HomeDay>,
+    uncategorizedName: String,
+    uncategorizedColor: Long?,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
     onFillGap: (Long, Long) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val itemCount = days.size + days.sumOf { it.segments.size } + days.count { it.isToday }
-    // 倒序改成正序后，最新的记录在列表底部，靠近「完成」键；第一次打开与新增记录后都停在底部。
+    // 倒序改成正序后，最新的记录在列表底部，靠近右下角的「+」；第一次打开与新增记录后都停在底部。
     val lastRecordedAt = remember(days) {
         days.flatMap { it.segments }.filterNot { it.isUnrecorded }
             .maxOfOrNull { it.endAt } ?: 0L
@@ -1823,7 +3330,8 @@ private fun TimelineList(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(top = 10.dp, bottom = 16.dp),
+        // 底部留 96dp 给右下角的悬浮「+」，避免遮住最后一条记录。
+        contentPadding = PaddingValues(top = 10.dp, bottom = 96.dp),
     ) {
         days.forEach { day ->
             item(key = "day-${day.date}") {
@@ -1836,11 +3344,12 @@ private fun TimelineList(
                         segment.events.joinToString(",") { it.event.id.toString() }
                 },
             ) { segment ->
-                val single = segment.events.singleOrNull()
                 TimelineSegmentRow(
                     segment = segment,
-                    onClick = single?.let { event -> { onEventClick(event.event.id) } },
-                    onLongClick = single?.let { event -> { onEventLongClick(event.event.id) } },
+                    uncategorizedName = uncategorizedName,
+                    uncategorizedColor = uncategorizedColor,
+                    onEventClick = onEventClick,
+                    onEventLongClick = onEventLongClick,
                     onFillGap = { onFillGap(segment.startAt, segment.endAt) },
                 )
             }
@@ -1885,7 +3394,7 @@ private fun NowMarker() {
             .padding(start = 24.dp, end = 24.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.width(44.dp), contentAlignment = Alignment.CenterEnd) {
+        Box(modifier = Modifier.width(48.dp), contentAlignment = Alignment.CenterEnd) {
             Text(
                 text = "现在",
                 style = MaterialTheme.typography.labelSmall,
@@ -1913,6 +3422,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.timelog.data.repository.TimeLogRepository
+import com.example.timelog.domain.model.Category
 import com.example.timelog.domain.model.TimelineBuilder
 import com.example.timelog.domain.model.TimelineEvent
 import com.example.timelog.domain.model.TimelineSegment
@@ -1941,6 +3451,8 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val days: List<HomeDay> = emptyList(),
     val events: List<TimelineEvent> = emptyList(),
+    /** 系统分类「未分类」：未记录的空隙和归入系统分类的事件共用同一个名字与颜色。 */
+    val uncategorized: Category? = null,
     val editor: EditorTarget? = null,
     val pendingDelete: TimelineEvent? = null,
 )
@@ -1970,9 +3482,10 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
     val uiState: StateFlow<HomeUiState> = combine(
         repository.timeline,
+        repository.categoryTree,
         clock,
         transient,
-    ) { events, now, local ->
+    ) { events, tree, now, local ->
         val today = DateTimeFormat.toLocalDateTime(now).toLocalDate()
         val days = TimelineBuilder.build(
             events = events,
@@ -1992,6 +3505,7 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
             isLoading = false,
             days = days,
             events = events,
+            uncategorized = tree.flatten().firstOrNull { it.first.category.isSystem }?.first?.category,
             editor = local.editor,
             pendingDelete = events.firstOrNull { it.event.id == local.pendingDeleteId },
         )
@@ -2073,7 +3587,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -2089,6 +3602,7 @@ import com.example.timelog.domain.model.TimelineSegment
 import com.example.timelog.util.DateTimeFormat
 
 private val BlockShape = RoundedCornerShape(14.dp)
+private val EventShape = RoundedCornerShape(8.dp)
 
 @Composable
 fun CategoryDot(
@@ -2107,13 +3621,17 @@ fun CategoryDot(
 /**
  * 时间流里的一行：左侧只在块与块的交接处显示时间，右侧是块本体。
  * 未记录的时间由虚线「未分类」块占位。
+ *
+ * 合并块里每条记录各自可点：重叠记录以前整块不可点，导致无法编辑，这里按事件拆开点击区域。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TimelineSegmentRow(
     segment: TimelineSegment,
-    onClick: (() -> Unit)?,
-    onLongClick: (() -> Unit)?,
+    uncategorizedName: String = "未分类",
+    uncategorizedColor: Long? = null,
+    onEventClick: (Long) -> Unit = {},
+    onEventLongClick: (Long) -> Unit = {},
     onFillGap: (() -> Unit)? = null,
 ) {
     val height = rememberBlockHeight(segment)
@@ -2124,10 +3642,13 @@ fun TimelineSegmentRow(
             .padding(start = 24.dp, end = 24.dp, top = 6.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Box(modifier = Modifier.width(44.dp).height(height)) {
+        Box(modifier = Modifier.width(48.dp).height(height)) {
             Text(
                 text = DateTimeFormat.time(segment.startAt),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 3.dp),
             )
@@ -2153,23 +3674,42 @@ fun TimelineSegmentRow(
             } else {
                 blockModifier
             }
-            UnrecordedBlock(segment = segment, modifier = fillable)
+            UnrecordedBlock(
+                segment = segment,
+                name = uncategorizedName,
+                colorHex = uncategorizedColor,
+                modifier = fillable,
+            )
         } else {
-            val clickable = if (onClick != null || onLongClick != null) {
-                blockModifier.combinedClickable(
-                    onClick = { onClick?.invoke() },
-                    onLongClick = { onLongClick?.invoke() },
-                )
+            // 整块可点：打开块内第一条记录；块内单条记录保持各自的可点/长按区，且内层优先消费点击。
+            val firstEventId = segment.events.firstOrNull()?.event?.id
+            val blockClickable = if (firstEventId != null) {
+                blockModifier
+                    .clip(BlockShape)
+                    .combinedClickable(
+                        onClick = { onEventClick(firstEventId) },
+                        onLongClick = { onEventLongClick(firstEventId) },
+                    )
             } else {
                 blockModifier
             }
-            RecordedBlock(segment = segment, modifier = clickable)
+            RecordedBlock(
+                segment = segment,
+                modifier = blockClickable,
+                onEventClick = onEventClick,
+                onEventLongClick = onEventLongClick,
+            )
         }
     }
 }
 
 @Composable
-private fun RecordedBlock(segment: TimelineSegment, modifier: Modifier) {
+private fun RecordedBlock(
+    segment: TimelineSegment,
+    modifier: Modifier,
+    onEventClick: (Long) -> Unit,
+    onEventLongClick: (Long) -> Unit,
+) {
     val accent = Color(segment.events.first().categoryColor)
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val textColor = if (darkTheme) lerp(accent, Color.White, 0.35f) else accent
@@ -2189,34 +3729,50 @@ private fun RecordedBlock(segment: TimelineSegment, modifier: Modifier) {
                 .background(accent.copy(alpha = if (darkTheme) 0.85f else 0.7f)),
         )
         Column(
-            modifier = Modifier.padding(start = 13.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 13.dp, top = 6.dp, end = 8.dp, bottom = 6.dp),
         ) {
             segment.events.forEachIndexed { index, item ->
                 if (index > 0) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(2.dp))
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CategoryDot(colorHex = item.categoryColor, size = 6.dp)
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = item.categoryPath,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        color = textColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                item.event.note?.let { note ->
-                    Text(
-                        text = note,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 12.dp, top = 3.dp),
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(EventShape)
+                        .combinedClickable(
+                            onClick = { onEventClick(item.event.id) },
+                            onLongClick = { onEventLongClick(item.event.id) },
+                        )
+                        .padding(horizontal = 2.dp, vertical = 2.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CategoryDot(colorHex = item.categoryColor, size = 6.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = item.categoryPath,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 18.sp,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                            color = textColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    item.event.note?.let { note ->
+                        Text(
+                            text = note,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 12.dp, top = 2.dp),
+                        )
+                    }
                 }
             }
         }
@@ -2224,9 +3780,15 @@ private fun RecordedBlock(segment: TimelineSegment, modifier: Modifier) {
 }
 
 @Composable
-private fun UnrecordedBlock(segment: TimelineSegment, modifier: Modifier) {
+private fun UnrecordedBlock(
+    segment: TimelineSegment,
+    name: String,
+    colorHex: Long?,
+    modifier: Modifier,
+) {
     val outline = MaterialTheme.colorScheme.outlineVariant
     val height = rememberBlockHeight(segment)
+    val labelColor = colorHex?.let { Color(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier = modifier
             .background(
@@ -2263,15 +3825,24 @@ private fun UnrecordedBlock(segment: TimelineSegment, modifier: Modifier) {
         contentAlignment = Alignment.TopStart,
     ) {
         Column {
-            Text(
-                text = "未分类",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (colorHex != null) {
+                    CategoryDot(colorHex = colorHex, size = 6.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 13.sp,
+                        lineHeight = 17.sp,
+                    ),
+                    color = labelColor,
+                )
+            }
             if (height >= 62.dp) {
                 Text(
                     text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -2285,10 +3856,10 @@ private fun UnrecordedBlock(segment: TimelineSegment, modifier: Modifier) {
 private fun rememberBlockHeight(segment: TimelineSegment): Dp {
     val minutes = ((segment.endAt - segment.startAt).coerceAtLeast(60_000L)) / 60_000f
     return if (segment.isUnrecorded) {
-        (42f + minutes * 0.45f).coerceIn(46f, 112f).dp
+        (46f + minutes * 0.45f).coerceIn(50f, 120f).dp
     } else {
-        val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 30f
-        (54f + minutes * 0.55f + extraRows).coerceIn(58f, 208f).dp
+        val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 28f
+        (58f + minutes * 0.60f + extraRows).coerceIn(62f, 220f).dp
     }
 }
 ```
@@ -2430,6 +4001,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -2458,6 +4030,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.timelog.domain.model.Event
 import com.example.timelog.util.DateTimeFormat
 import java.time.LocalDate
 import java.time.LocalTime
@@ -2476,6 +4049,8 @@ fun RecordSheet(
     onEndDateSelected: (LocalDate) -> Unit,
     onEndTimeSelected: (LocalTime) -> Unit,
     onSave: () -> Unit,
+    onConfirmOverwrite: () -> Unit,
+    onCancelOverwrite: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var picker by remember { mutableStateOf<PickerTarget?>(null) }
@@ -2576,6 +4151,16 @@ fun RecordSheet(
                 }
             }
         }
+    }
+
+    // 保存时如果会整段盖掉已有记录，先让用户确认；单侧裁剪 / 拆分不需要打扰。
+    if (state.pendingOverwrite.isNotEmpty()) {
+        OverlapConfirmDialog(
+            victims = state.pendingOverwrite,
+            isSaving = state.isSaving,
+            onConfirm = onConfirmOverwrite,
+            onDismiss = onCancelOverwrite,
+        )
     }
 
     when (picker) {
@@ -2747,6 +4332,48 @@ private fun TimePickerDialog(
         }
     }
 }
+
+/** 保存会整段覆盖已有记录时的确认框：逐条列出会被删掉的记录。 */
+@Composable
+private fun OverlapConfirmDialog(
+    victims: List<Event>,
+    isSaving: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("时间重叠") },
+        text = {
+            Column {
+                Text("保存之后，下面这些记录会被整段覆盖并删除：")
+                victims.forEach { victim ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = DateTimeFormat.rangeText(victim.startAt, victim.endAt),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    victim.note?.let { note ->
+                        Text(
+                            text = note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !isSaving) {
+                Text("仍要保存", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) { Text("取消") }
+        },
+    )
+}
 ```
 
 ## `app/src/main/java/com/example/timelog/ui/record/RecordViewModel.kt`
@@ -2760,7 +4387,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.timelog.data.repository.TimeLogRepository
+import com.example.timelog.domain.OverlapPlan
 import com.example.timelog.domain.model.CategoryTree
+import com.example.timelog.domain.model.Event
+import com.example.timelog.domain.resolveOverlap
 import com.example.timelog.ui.home.EditorTarget
 import com.example.timelog.util.DateTimeFormat
 import java.time.LocalDate
@@ -2786,6 +4416,8 @@ data class RecordUiState(
     val timeError: Boolean = false,
     val isSaving: Boolean = false,
     val saved: Boolean = false,
+    /** 会被目标区间整段盖住、需要用户确认的已有记录；非空时由 RecordSheet 弹确认框。 */
+    val pendingOverwrite: List<Event> = emptyList(),
 )
 
 class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
@@ -2794,6 +4426,9 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
     val uiState: StateFlow<RecordUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
+
+    /** 等用户确认「仍要保存」的落库参数；确认后按同一份 [OverlapPlan] 真正写入。 */
+    private var pendingSave: PendingSave? = null
 
     init {
         viewModelScope.launch {
@@ -2809,7 +4444,15 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
     fun start(target: EditorTarget) {
         loadJob?.cancel()
-        _uiState.update { it.copy(isSaving = false, saved = false, timeError = false) }
+        pendingSave = null
+        _uiState.update {
+            it.copy(
+                isSaving = false,
+                saved = false,
+                timeError = false,
+                pendingOverwrite = emptyList(),
+            )
+        }
         when (target) {
             is EditorTarget.New -> startNew(target)
             is EditorTarget.Edit -> startEdit(target.eventId)
@@ -2940,9 +4583,14 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
         }
     }
 
+    /**
+     * 保存：先查重叠并算出让路方案。
+     * - 只有单侧裁剪 / 拆分（updates / clones）时静默生效；
+     * - 有整段被盖住的记录（victims）时先挂起，等用户在确认框里点「仍要保存」再落库。
+     */
     fun save() {
         val state = _uiState.value
-        if (state.isSaving) return
+        if (state.isSaving || pendingSave != null) return
         val categoryId = state.selectedCategoryId ?: return
         val startAt = DateTimeFormat.toEpochMillis(state.startDate, state.startTime)
         val endAt = DateTimeFormat.toEpochMillis(state.endDate, state.endTime)
@@ -2953,23 +4601,80 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
         _uiState.update { it.copy(isSaving = true, timeError = false) }
         viewModelScope.launch {
             runCatching {
-                repository.saveEvent(
-                    id = state.eventId,
-                    note = state.note,
-                    startAt = startAt,
-                    endAt = endAt,
-                    categoryId = categoryId,
+                // 契约：getOverlappingEvents(startAt, endAt, excludeId)
+                val others = repository.getOverlappingEvents(
+                    startAt,
+                    endAt,
+                    state.eventId ?: -1L,
                 )
-            }.onSuccess {
-                _uiState.update { it.copy(isSaving = false, saved = true) }
+                val plan = resolveOverlap(startAt, endAt, others)
+                if (plan.victims.isNotEmpty()) {
+                    pendingSave = PendingSave(
+                        id = state.eventId,
+                        note = state.note,
+                        startAt = startAt,
+                        endAt = endAt,
+                        categoryId = categoryId,
+                        plan = plan,
+                    )
+                    _uiState.update {
+                        it.copy(isSaving = false, pendingOverwrite = plan.victims)
+                    }
+                } else {
+                    // 契约：saveEventResolved(id, note, startAt, endAt, categoryId, plan)
+                    repository.saveEventResolved(
+                        state.eventId,
+                        state.note,
+                        startAt,
+                        endAt,
+                        categoryId,
+                        plan,
+                    )
+                    _uiState.update { it.copy(isSaving = false, saved = true) }
+                }
             }.onFailure {
-                _uiState.update { it.copy(isSaving = false) }
+                pendingSave = null
+                _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
             }
         }
     }
 
+    /** 重叠确认框里点「仍要保存」：按挂起时的方案真正写入，victims 会被删除。 */
+    fun confirmOverwrite() {
+        val pending = pendingSave ?: return
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true) }
+        viewModelScope.launch {
+            runCatching {
+                repository.saveEventResolved(
+                    pending.id,
+                    pending.note,
+                    pending.startAt,
+                    pending.endAt,
+                    pending.categoryId,
+                    pending.plan,
+                )
+            }.onSuccess {
+                pendingSave = null
+                _uiState.update {
+                    it.copy(isSaving = false, saved = true, pendingOverwrite = emptyList())
+                }
+            }.onFailure {
+                pendingSave = null
+                _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
+            }
+        }
+    }
+
+    /** 重叠确认框里点「取消」：放弃这次保存，回到编辑状态。 */
+    fun dismissOverwrite() {
+        pendingSave = null
+        _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
+    }
+
     fun reset() {
         loadJob?.cancel()
+        pendingSave = null
         _uiState.update { current ->
             RecordUiState(
                 tree = current.tree,
@@ -2985,12 +4690,1190 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
             ?: tree.roots.firstOrNull()?.category?.id
     }
 
+    private data class PendingSave(
+        val id: Long?,
+        val note: String?,
+        val startAt: Long,
+        val endAt: Long,
+        val categoryId: Long,
+        val plan: OverlapPlan,
+    )
+
     companion object {
         fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
             initializer { RecordViewModel(repository) }
         }
     }
 }
+```
+
+## `app/src/main/java/com/example/timelog/ui/search/SearchScreen.kt`
+
+```kotlin
+package com.example.timelog.ui.search
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.timelog.domain.model.TimelineEvent
+import com.example.timelog.ui.home.CategoryDot
+import com.example.timelog.util.DateTimeFormat
+
+/**
+ * 备注搜索页：整屏列表（不用 Scaffold），顶部是返回箭头 + 自动聚焦的搜索框，
+ * 下面按「备注 / 分类路径 / 日期 + 时间段」列出命中记录，点击回调事件 id。
+ */
+@Composable
+fun SearchScreen(
+    onBack: () -> Unit,
+    onOpenEvent: (Long) -> Unit,
+    viewModel: SearchViewModel,
+) {
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val results by viewModel.results.collectAsStateWithLifecycle()
+    val focusRequester = remember { FocusRequester() }
+
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding(),
+    ) {
+        SearchBar(
+            query = query,
+            onQueryChange = viewModel::onQueryChange,
+            onBack = onBack,
+            focusRequester = focusRequester,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+        when {
+            query.isBlank() -> SearchHint()
+            results.isEmpty() -> NoSearchResult(query = query)
+            else -> SearchResultList(results = results, onOpenEvent = onOpenEvent)
+        }
+    }
+}
+
+@Composable
+private fun SearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onBack: () -> Unit,
+    focusRequester: FocusRequester,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, end = 20.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "返回",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        TextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focusRequester),
+            placeholder = {
+                Text(
+                    text = "搜索备注",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "清空",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = MaterialTheme.colorScheme.primary,
+                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun SearchResultList(
+    results: List<TimelineEvent>,
+    onOpenEvent: (Long) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
+    ) {
+        item(key = "count") {
+            Text(
+                text = "找到 " + results.size + " 条记录",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 2.dp),
+            )
+        }
+        items(items = results, key = { it.event.id }) { item ->
+            SearchResultRow(item = item, onClick = { onOpenEvent(item.event.id) })
+        }
+    }
+}
+
+@Composable
+private fun SearchResultRow(
+    item: TimelineEvent,
+    onClick: () -> Unit,
+) {
+    val event = item.event
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(modifier = Modifier.padding(top = 7.dp)) {
+                CategoryDot(colorHex = item.categoryColor, size = 8.dp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = event.note ?: "无备注",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (event.note != null) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = item.categoryPath,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = DateTimeFormat.datePart(event.startAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = DateTimeFormat.rangeText(event.startAt, event.endAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 42.dp)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+    }
+}
+
+@Composable
+private fun SearchHint() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 36.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = "搜索备注",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "输入关键词，就能找到备注里包含它的记录。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun NoSearchResult(query: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 36.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = "没有找到",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "没有备注包含「" + query.trim() + "」。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+```
+
+## `app/src/main/java/com/example/timelog/ui/search/SearchViewModel.kt`
+
+```kotlin
+package com.example.timelog.ui.search
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.timelog.data.repository.TimeLogRepository
+import com.example.timelog.domain.model.TimelineEvent
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
+
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
+class SearchViewModel(private val repository: TimeLogRepository) : ViewModel() {
+
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    /** 输入停顿 250ms 后再查询，避免每敲一个字都打一次数据库。 */
+    val results: StateFlow<List<TimelineEvent>> = _query
+        .debounce(SEARCH_DEBOUNCE_MILLIS)
+        .flatMapLatest { repository.searchEvents(it.trim()) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList(),
+        )
+
+    fun onQueryChange(value: String) {
+        _query.value = value
+    }
+
+    companion object {
+        private const val SEARCH_DEBOUNCE_MILLIS = 250L
+
+        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    SearchViewModel(repository) as T
+            }
+    }
+}
+```
+
+## `app/src/main/java/com/example/timelog/ui/stats/StatisticsScreen.kt`
+
+```kotlin
+package com.example.timelog.ui.stats
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.timelog.domain.CategoryUsage
+import com.example.timelog.domain.StatsMode
+import com.example.timelog.domain.StatsSummary
+import com.example.timelog.ui.theme.FallGreen
+import com.example.timelog.ui.theme.FallGreenDark
+import com.example.timelog.ui.theme.RiseRed
+import com.example.timelog.ui.theme.RiseRedDark
+import com.example.timelog.util.DateTimeFormat
+import java.time.LocalDate
+import kotlin.math.roundToInt
+
+/** 自定义时间段需要连续弹两次日期选择：先起始日，再结束日。 */
+private enum class DatePickerStep { START, END }
+
+private const val RING_LAYER_COUNT = 3
+private const val RING_GAP_ANGLE = 2.5f
+private const val RING_MIN_ANGLE = 1f
+
+/** 各层环带的内 / 外半径比例（相对于外接圆半径 R）。 */
+private val RING_INNER_RATIOS = floatArrayOf(0.46f, 0.68f, 0.84f)
+private val RING_OUTER_RATIOS = floatArrayOf(0.68f, 0.84f, 1.0f)
+
+/**
+ * 统计页（v3.0）：模式切换、范围导航、多层环形堆叠图与分类用时列表。
+ *
+ * 页面整体可滚动；[footer] 渲染在内容最后，用于承载底部数据迁移入口。
+ */
+@Composable
+fun StatisticsScreen(
+    state: StatisticsUiState,
+    onModeSelected: (StatsMode) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
+    footer: @Composable () -> Unit = {},
+) {
+    val summary = state.summary
+    var pickerStep by remember { mutableStateOf<DatePickerStep?>(null) }
+    var pendingStart by remember { mutableStateOf<LocalDate?>(null) }
+
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val riseColor = if (isDark) RiseRedDark else RiseRed
+    val fallColor = if (isDark) FallGreenDark else FallGreen
+    val today = LocalDate.now(DateTimeFormat.zone())
+
+    fun openCustomRangePicker() {
+        pendingStart = null
+        pickerStep = DatePickerStep.START
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(top = 4.dp, bottom = 16.dp),
+    ) {
+        ModeSelector(
+            mode = state.mode,
+            onModeSelected = onModeSelected,
+            onEditCustomRange = ::openCustomRangePicker,
+        )
+        RangeNav(
+            label = state.label,
+            mode = state.mode,
+            canGoNext = state.canGoNext,
+            onPrevious = onPrevious,
+            onNext = onNext,
+            onEditCustomRange = ::openCustomRangePicker,
+        )
+        when {
+            state.isLoading -> Unit
+            summary == null -> Unit
+            else -> {
+                RingSection(summary = summary)
+                if (summary.totalMillis <= 0L) {
+                    EmptyStats()
+                } else {
+                    SectionHeader("分类用时")
+                    val maxMillis = summary.roots.maxOfOrNull { it.millis } ?: 1L
+                    summary.roots.forEach { root ->
+                        CategoryUsageRow(
+                            usage = root,
+                            maxMillis = maxMillis,
+                            riseColor = riseColor,
+                            fallColor = fallColor,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        footer()
+    }
+
+    when (pickerStep) {
+        DatePickerStep.START -> DatePickerSheet(
+            initialDate = state.customRange?.first ?: today,
+            onDismiss = { pickerStep = null },
+            onConfirm = { date ->
+                pendingStart = date
+                pickerStep = DatePickerStep.END
+            },
+        )
+        DatePickerStep.END -> DatePickerSheet(
+            initialDate = pendingStart ?: state.customRange?.second ?: today,
+            onDismiss = { pickerStep = null },
+            onConfirm = { end ->
+                val start = pendingStart ?: end
+                pendingStart = null
+                pickerStep = null
+                if (end.isBefore(start)) {
+                    onCustomRangeSelected(end, start)
+                } else {
+                    onCustomRangeSelected(start, end)
+                }
+            },
+        )
+        null -> Unit
+    }
+}
+
+@Composable
+private fun ModeSelector(
+    mode: StatsMode,
+    onModeSelected: (StatsMode) -> Unit,
+    onEditCustomRange: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatsMode.entries.forEach { candidate ->
+            FilterChip(
+                selected = candidate == mode,
+                onClick = {
+                    if (candidate == StatsMode.CUSTOM && mode == StatsMode.CUSTOM) {
+                        onEditCustomRange()
+                    } else {
+                        onModeSelected(candidate)
+                    }
+                },
+                label = { Text(statsModeLabel(candidate), fontSize = 13.sp) },
+            )
+        }
+    }
+}
+
+private fun statsModeLabel(mode: StatsMode): String = when (mode) {
+    StatsMode.DAY -> "日"
+    StatsMode.WEEK -> "周"
+    StatsMode.MONTH -> "月"
+    StatsMode.YEAR -> "年"
+    StatsMode.CUSTOM -> "自定义"
+}
+
+@Composable
+private fun RangeNav(
+    label: String,
+    mode: StatsMode,
+    canGoNext: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onEditCustomRange: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onPrevious) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                contentDescription = "上一个周期",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (mode == StatsMode.CUSTOM) {
+                TextButton(
+                    onClick = onEditCustomRange,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        text = "修改",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+        IconButton(onClick = onNext, enabled = canGoNext) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = "下一个周期",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RingSection(summary: StatsSummary) {
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+    val isEmpty = summary.totalMillis <= 0L
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .fillMaxWidth()
+                .aspectRatio(1f),
+        ) {
+            val radius = minOf(size.width, size.height) / 2f
+            if (radius <= 0f) return@Canvas
+            val center = Offset(size.width / 2f, size.height / 2f)
+            if (isEmpty) {
+                for (layer in 0 until RING_LAYER_COUNT) {
+                    drawRingTrack(layer, center, radius, trackColor)
+                }
+            } else {
+                val layerHasContent = BooleanArray(RING_LAYER_COUNT)
+                summary.roots.forEach { root ->
+                    if (root.millis > 0L) layerHasContent[0] = true
+                    if (root.children.isNotEmpty()) layerHasContent[1] = true
+                    if (root.children.any { it.children.isNotEmpty() }) layerHasContent[2] = true
+                }
+                for (layer in 0 until RING_LAYER_COUNT) {
+                    if (layerHasContent[layer]) drawRingTrack(layer, center, radius, trackColor)
+                }
+                drawUsageLayer(
+                    usages = summary.roots,
+                    layer = 0,
+                    startAngle = -90f,
+                    totalSweep = 360f,
+                    center = center,
+                    radius = radius,
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = if (isEmpty) "—" else DateTimeFormat.durationText(summary.totalMillis),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "共 ${summary.eventCount} 条记录",
+                fontSize = 11.sp,
+                color = mutedColor,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        fontSize = 15.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+}
+
+@Composable
+private fun EmptyStats() {
+    Text(
+        text = "这段时间还没有记录",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        fontSize = 15.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun CategoryUsageRow(
+    usage: CategoryUsage,
+    maxMillis: Long,
+    riseColor: Color,
+    fallColor: Color,
+) {
+    val accent = Color(usage.colorHex)
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val fraction = if (maxMillis <= 0L) {
+        0f
+    } else {
+        (usage.millis.toDouble() / maxMillis.toDouble()).toFloat().coerceIn(0.03f, 1f)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 7.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(accent),
+            )
+            Spacer(Modifier.width(8.dp))
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = usage.name,
+                    modifier = Modifier.weight(1f, fill = false),
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "${usage.eventCount}次",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            DeltaLabel(usage = usage, riseColor = riseColor, fallColor = fallColor)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = DateTimeFormat.durationText(usage.millis),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(trackColor),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(accent),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeltaLabel(usage: CategoryUsage, riseColor: Color, fallColor: Color) {
+    val previous = usage.previousMillis
+    if (previous <= 0L) {
+        Text(
+            text = "新增",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = riseColor,
+            maxLines = 1,
+        )
+        return
+    }
+    val percent = ((usage.millis - previous).toDouble() / previous.toDouble() * 100.0).roundToInt()
+    val text = when {
+        percent > 0 -> "+$percent%"
+        percent < 0 -> "$percent%"
+        else -> "0%"
+    }
+    val color = when {
+        percent > 0 -> riseColor
+        percent < 0 -> fallColor
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        color = color,
+        maxLines = 1,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerSheet(
+    initialDate: LocalDate,
+    onDismiss: () -> Unit,
+    onConfirm: (LocalDate) -> Unit,
+) {
+    val pickerState = rememberDatePickerState(
+        initialSelectedDateMillis = DateTimeFormat.startOfDayUtcMillis(initialDate),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        onConfirm(DateTimeFormat.dateFromUtcMillis(millis))
+                    }
+                },
+            ) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    ) {
+        DatePicker(state = pickerState)
+    }
+}
+
+/** 单层环带的几何参数：绘制矩形、直径与环宽。 */
+private class RingGeometry(val topLeft: Offset, val size: Size, val strokeWidth: Float)
+
+private fun ringGeometry(layer: Int, center: Offset, radius: Float): RingGeometry {
+    val innerRadius = radius * RING_INNER_RATIOS[layer]
+    val outerRadius = radius * RING_OUTER_RATIOS[layer]
+    val ringRadius = (innerRadius + outerRadius) / 2f
+    return RingGeometry(
+        topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
+        size = Size(ringRadius * 2f, ringRadius * 2f),
+        strokeWidth = outerRadius - innerRadius,
+    )
+}
+
+/** 画一整圈淡色轨道。 */
+private fun DrawScope.drawRingTrack(layer: Int, center: Offset, radius: Float, color: Color) {
+    val geometry = ringGeometry(layer, center, radius)
+    drawArc(
+        color = color,
+        startAngle = 0f,
+        sweepAngle = 360f,
+        useCenter = false,
+        topLeft = geometry.topLeft,
+        size = geometry.size,
+        style = Stroke(width = geometry.strokeWidth),
+    )
+}
+
+/**
+ * 递归画出某一层分类环；子级按父级的角度范围再切分，形成多层堆叠。
+ */
+private fun DrawScope.drawUsageLayer(
+    usages: List<CategoryUsage>,
+    layer: Int,
+    startAngle: Float,
+    totalSweep: Float,
+    center: Offset,
+    radius: Float,
+) {
+    if (layer >= RING_LAYER_COUNT || usages.isEmpty()) return
+    val totalMillis = usages.sumOf { it.millis }
+    if (totalMillis <= 0L) return
+
+    val geometry = ringGeometry(layer, center, radius)
+    var cursor = startAngle
+    usages.forEach { usage ->
+        val sweep = (totalSweep.toDouble() * usage.millis.toDouble() / totalMillis.toDouble()).toFloat()
+        val visibleSweep = (sweep - RING_GAP_ANGLE).coerceAtLeast(RING_MIN_ANGLE).coerceAtMost(sweep)
+        if (visibleSweep > 0f) {
+            drawArc(
+                color = Color(usage.colorHex),
+                startAngle = cursor + (sweep - visibleSweep) / 2f,
+                sweepAngle = visibleSweep,
+                useCenter = false,
+                topLeft = geometry.topLeft,
+                size = geometry.size,
+                style = Stroke(width = geometry.strokeWidth),
+            )
+        }
+        if (usage.children.isNotEmpty()) {
+            drawUsageLayer(
+                usages = usage.children,
+                layer = layer + 1,
+                startAngle = cursor,
+                totalSweep = sweep,
+                center = center,
+                radius = radius,
+            )
+        }
+        cursor += sweep
+    }
+}
+```
+
+## `app/src/main/java/com/example/timelog/ui/stats/StatisticsViewModel.kt`
+
+```kotlin
+package com.example.timelog.ui.stats
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.timelog.data.repository.TimeLogRepository
+import com.example.timelog.domain.StatsBuilder
+import com.example.timelog.domain.StatsMode
+import com.example.timelog.domain.StatsSummary
+import com.example.timelog.domain.StatsWindow
+import com.example.timelog.domain.StatsWindows
+import com.example.timelog.util.DateTimeFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.stateIn
+
+/**
+ * 统计页的展示状态。
+ *
+ * [window] 与 [summary] 在首帧聚合完成前为 null；[label] 跟随窗口（跨年等规则见 [statsLabel]）。
+ */
+data class StatisticsUiState(
+    val isLoading: Boolean = true,
+    val mode: StatsMode = StatsMode.DAY,
+    val window: StatsWindow? = null,
+    val label: String = "",
+    val canGoNext: Boolean = false,
+    val customRange: Pair<LocalDate, LocalDate>? = null,
+    val summary: StatsSummary? = null,
+)
+
+/**
+ * 统计页 ViewModel：五种查看方式、前后翻页、自定义时间段。
+ *
+ * 事件与分类树都来自 [TimeLogRepository]，每分钟推进一次「现在」，
+ * 让当前周期边界、「今天」前缀与记录条数口径保持新鲜。
+ */
+class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel() {
+
+    private val selectedMode = MutableStateFlow(StatsMode.DAY)
+
+    /** null 表示跟随「当前周期」（跨天后自动前移）；翻页后锁定到目标窗口的起始日。 */
+    private val anchorDate = MutableStateFlow<LocalDate?>(null)
+
+    private val selectedCustomRange = MutableStateFlow<Pair<LocalDate, LocalDate>?>(null)
+
+    /** 每 60 秒推进一次「现在」；本轮订阅结束后由 stateIn 自动停止。 */
+    private val clock = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(REFRESH_INTERVAL_MILLIS)
+        }
+    }
+
+    private data class Controls(
+        val mode: StatsMode,
+        val anchor: LocalDate?,
+        val customRange: Pair<LocalDate, LocalDate>?,
+    )
+
+    private val controls = combine(selectedMode, anchorDate, selectedCustomRange) { mode, anchor, customRange ->
+        Controls(mode, anchor, customRange)
+    }
+
+    val uiState: StateFlow<StatisticsUiState> = combine(
+        repository.timeline,
+        repository.categoryTree,
+        clock,
+        controls,
+    ) { events, tree, now, control ->
+        val zone = DateTimeFormat.zone()
+        val today = StatsWindows.dateOf(now, zone)
+        val window = windowOf(control, today, zone)
+        StatisticsUiState(
+            isLoading = false,
+            mode = window.mode,
+            window = window,
+            label = statsLabel(window, now, zone),
+            canGoNext = StatsWindows.shift(window, 1, zone).startAt <= now,
+            customRange = control.customRange,
+            summary = StatsBuilder.build(events, tree, window, now, zone),
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MILLIS),
+        initialValue = StatisticsUiState(),
+    )
+
+    /**
+     * 切换查看方式。
+     *
+     * 日/周/月/年回到「当前周期」（锚点清空，跨天后自动前移）；自定义默认最近 7 天（含今天）。
+     */
+    fun selectMode(mode: StatsMode) {
+        val zone = DateTimeFormat.zone()
+        val today = StatsWindows.dateOf(System.currentTimeMillis(), zone)
+        when (mode) {
+            StatsMode.CUSTOM -> {
+                selectedMode.value = StatsMode.CUSTOM
+                selectedCustomRange.value = today.minusDays(DEFAULT_CUSTOM_DAYS - 1) to today
+                anchorDate.value = null
+            }
+            else -> {
+                selectedMode.value = mode
+                // 切换查看方式时回到当前周期，不沿用上一个模式的锚点。
+                anchorDate.value = null
+            }
+        }
+    }
+
+    /** 上一个周期；自定义窗口按窗口长度平移。 */
+    fun goPrevious() {
+        val zone = DateTimeFormat.zone()
+        val today = StatsWindows.dateOf(System.currentTimeMillis(), zone)
+        applyWindow(StatsWindows.shift(currentWindow(zone, today), -1, zone), zone)
+    }
+
+    /** 下一个周期；目标窗口的开始时间还在未来时忽略，避免翻到空白的将来。 */
+    fun goNext() {
+        val zone = DateTimeFormat.zone()
+        val now = System.currentTimeMillis()
+        val today = StatsWindows.dateOf(now, zone)
+        val target = StatsWindows.shift(currentWindow(zone, today), 1, zone)
+        if (target.startAt > now) return
+        applyWindow(target, zone)
+    }
+
+    /** 设置自定义时间段（闭区间，含首尾两天）；结束早于起始时自动交换。 */
+    fun setCustomRange(start: LocalDate, end: LocalDate) {
+        val first = if (end.isBefore(start)) end else start
+        val last = if (end.isBefore(start)) start else end
+        selectedMode.value = StatsMode.CUSTOM
+        selectedCustomRange.value = first to last
+        anchorDate.value = first
+    }
+
+    private fun currentWindow(zone: ZoneId, today: LocalDate): StatsWindow =
+        windowOf(Controls(selectedMode.value, anchorDate.value, selectedCustomRange.value), today, zone)
+
+    private fun windowOf(control: Controls, today: LocalDate, zone: ZoneId): StatsWindow =
+        when (control.mode) {
+            StatsMode.CUSTOM -> {
+                val range = control.customRange ?: (today.minusDays(DEFAULT_CUSTOM_DAYS - 1) to today)
+                StatsWindows.custom(range.first, range.second, zone)
+            }
+            else -> StatsWindows.of(control.mode, control.anchor ?: today, zone)
+        }
+
+    private fun applyWindow(window: StatsWindow, zone: ZoneId) {
+        if (window.mode == StatsMode.CUSTOM) {
+            val startDate = StatsWindows.dateOf(window.startAt, zone)
+            val endDate = StatsWindows.dateOf(window.endAt - 1L, zone)
+            selectedMode.value = StatsMode.CUSTOM
+            selectedCustomRange.value = startDate to endDate
+            anchorDate.value = startDate
+        } else {
+            selectedMode.value = window.mode
+            anchorDate.value = StatsWindows.dateOf(window.startAt, zone)
+        }
+    }
+
+    companion object {
+        private const val REFRESH_INTERVAL_MILLIS = 60_000L
+        private const val SUBSCRIPTION_TIMEOUT_MILLIS = 5_000L
+        private const val DEFAULT_CUSTOM_DAYS = 7L
+
+        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    StatisticsViewModel(repository) as T
+            }
+    }
+}
+
+/** 范围文案里日期的本地化格式；声明在文件级，避免每次重组重建。 */
+private val dayMonthWeekdayFormatter = DateTimeFormatter.ofPattern("M月d日 E", Locale.SIMPLIFIED_CHINESE)
+private val fullDayMonthWeekdayFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日 E", Locale.SIMPLIFIED_CHINESE)
+private val yearMonthFormatter = DateTimeFormatter.ofPattern("yyyy年M月", Locale.SIMPLIFIED_CHINESE)
+private val yearFormatter = DateTimeFormatter.ofPattern("yyyy年", Locale.SIMPLIFIED_CHINESE)
+
+/**
+ * 范围导航条上的文案。
+ *
+ * - DAY：同年「11月1日 周日」，跨年「2025年11月1日 周日」，今天加「今天 · 」前缀
+ * - WEEK / CUSTOM：同日历年「10月1日 – 10月15日」，跨年两端都带年份
+ * - MONTH：「2026年11月」
+ * - YEAR：「2026年」
+ */
+internal fun statsLabel(window: StatsWindow, now: Long, zone: ZoneId): String {
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val startDate = Instant.ofEpochMilli(window.startAt).atZone(zone).toLocalDate()
+    return when (window.mode) {
+        StatsMode.DAY -> dayLabel(startDate, today)
+        StatsMode.WEEK, StatsMode.CUSTOM -> {
+            val endDate = Instant.ofEpochMilli(window.endAt - 1L).atZone(zone).toLocalDate()
+            rangeLabel(startDate, endDate)
+        }
+        StatsMode.MONTH -> yearMonthFormatter.format(startDate)
+        StatsMode.YEAR -> yearFormatter.format(startDate)
+    }
+}
+
+private fun dayLabel(date: LocalDate, today: LocalDate): String {
+    val text = if (date.year == today.year) {
+        dayMonthWeekdayFormatter.format(date)
+    } else {
+        fullDayMonthWeekdayFormatter.format(date)
+    }
+    return if (date == today) "今天 · $text" else text
+}
+
+private fun rangeLabel(start: LocalDate, end: LocalDate): String =
+    if (start.year == end.year) {
+        "${start.monthValue}月${start.dayOfMonth}日 – ${end.monthValue}月${end.dayOfMonth}日"
+    } else {
+        "${start.year}年${start.monthValue}月${start.dayOfMonth}日 – " +
+            "${end.year}年${end.monthValue}月${end.dayOfMonth}日"
+    }
 ```
 
 ## `app/src/main/java/com/example/timelog/ui/theme/Color.kt`
@@ -3008,6 +5891,15 @@ val Pine = Color(0xFF2F5D50)
 val PineSoft = Color(0xFFE6EFEA)
 val Clay = Color(0xFFB4654A)
 val Hairline = Color(0xFFE4E1DA)
+
+/** 「完成」浮动按钮：用户指定蓝底圆圈 + 白色加号。 */
+val ActionBlue = Color(0xFF2F6FE4)
+
+/** 分类用时环比：增加为红、减少为绿（用户指定）。深色模式用同族的浅色版本。 */
+val RiseRed = Color(0xFFC0392B)
+val FallGreen = Color(0xFF2E7D32)
+val RiseRedDark = Color(0xFFF08A80)
+val FallGreenDark = Color(0xFF7FD1A3)
 
 val NightSurface = Color(0xFF1A1D1A)
 val NightInk = Color(0xFFE7EAE5)
@@ -3163,7 +6055,6 @@ object DateTimeFormat {
     private val fullDateFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日 EEEE", zh)
     private val monthDayFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", zh)
     private val shortMonthDayFormatter = DateTimeFormatter.ofPattern("M月d日", zh)
-    private val yearFormatter = DateTimeFormatter.ofPattern("yyyy年", zh)
 
     fun zone(): ZoneId = ZoneId.systemDefault()
 
@@ -3181,25 +6072,24 @@ object DateTimeFormat {
 
     fun monthDay(date: LocalDate): String = date.format(shortMonthDayFormatter)
 
+    /** 主界面日期标题：今天/昨天，其余只显示「M月d日」，不显示年份与星期。 */
     fun sectionTitle(date: LocalDate, today: LocalDate = LocalDate.now(zone())): String =
         when (date) {
             today -> "今天"
             today.minusDays(1) -> "昨天"
-            else -> if (date.year == today.year) {
-                date.format(monthDayFormatter)
-            } else {
-                date.format(fullDateFormatter)
-            }
+            else -> monthDay(date)
         }
 
+    /** 主界面日期副标题：今天/昨天补上日期，其余只留「周X」小字。 */
     fun sectionSubtitle(date: LocalDate, today: LocalDate = LocalDate.now(zone())): String =
         when (date) {
-            today, today.minusDays(1) -> date.format(monthDayFormatter)
-            else -> date.format(yearFormatter) + " · " + date.dayOfWeek.getDisplayName(
-                TextStyle.FULL,
-                zh,
-            )
+            today, today.minusDays(1) -> monthDay(date) + " · " + weekdayLabel(date)
+            else -> weekdayLabel(date)
         }
+
+    /** 固定输出「周日」「周一」…，不依赖不同 JDK 的 CLDR 短星期文本。 */
+    private fun weekdayLabel(date: LocalDate): String =
+        "周" + date.dayOfWeek.getDisplayName(TextStyle.NARROW, zh)
 
     fun fullDateTime(epochMillis: Long): String =
         toLocalDateTime(epochMillis).format(fullDateFormatter) + " " + time(epochMillis)
@@ -3296,7 +6186,7 @@ object DateTimeFormat {
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">時計</string>
+    <string name="app_name">時</string>
 </resources>
 ```
 
@@ -3312,6 +6202,603 @@ object DateTimeFormat {
         <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
+```
+
+## `app/src/test/java/com/example/timelog/domain/OverlapResolverTest.kt`
+
+```kotlin
+package com.example.timelog.domain
+
+import com.example.timelog.domain.model.Event
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class OverlapResolverTest {
+
+    private val hour = 3_600_000L
+    private val base = 1_700_000_000_000L
+
+    private fun at(hours: Long): Long = base + hours * hour
+
+    private fun event(
+        id: Long,
+        startHour: Long,
+        endHour: Long,
+        note: String? = null,
+        categoryId: Long = 7L,
+    ): Event = Event(
+        id = id,
+        note = note,
+        startAt = at(startHour),
+        endAt = at(endHour),
+        categoryId = categoryId,
+        createdAt = 1_000L + id,
+        updatedAt = 2_000L + id,
+    )
+
+    @Test
+    fun noOverlapLeavesEverythingUntouched() {
+        val plan = resolveOverlap(at(10), at(11), listOf(event(1, 8, 9), event(2, 12, 13)))
+
+        assertTrue(plan.updates.isEmpty())
+        assertTrue(plan.clones.isEmpty())
+        assertTrue(plan.victims.isEmpty())
+    }
+
+    @Test
+    fun emptyOthersProduceEmptyPlan() {
+        val plan = resolveOverlap(at(10), at(11), emptyList())
+
+        assertTrue(plan.updates.isEmpty())
+        assertTrue(plan.clones.isEmpty())
+        assertTrue(plan.victims.isEmpty())
+    }
+
+    @Test
+    fun touchingIntervalsAreNotOverlap() {
+        // 老记录 ends exactly at 目标 start.
+        val before = resolveOverlap(at(10), at(11), listOf(event(1, 9, 10)))
+        // 老记录 starts exactly at 目标 end.
+        val after = resolveOverlap(at(10), at(11), listOf(event(2, 11, 12)))
+
+        assertTrue(before.updates.isEmpty() && before.clones.isEmpty() && before.victims.isEmpty())
+        assertTrue(after.updates.isEmpty() && after.clones.isEmpty() && after.victims.isEmpty())
+    }
+
+    @Test
+    fun eventFullyInsideTargetIsVictim() {
+        val plan = resolveOverlap(at(10), at(12), listOf(event(1, 10, 11, note = "写周报")))
+
+        assertEquals(listOf(1L), plan.victims.map { it.id })
+        assertEquals("写周报", plan.victims.single().note)
+        assertTrue(plan.updates.isEmpty())
+        assertTrue(plan.clones.isEmpty())
+    }
+
+    @Test
+    fun identicalIntervalIsVictim() {
+        val plan = resolveOverlap(at(10), at(12), listOf(event(1, 10, 12)))
+
+        assertEquals(listOf(1L), plan.victims.map { it.id })
+        assertTrue(plan.updates.isEmpty())
+        assertTrue(plan.clones.isEmpty())
+    }
+
+    @Test
+    fun eventStickingOutLeftIsTrimmedToTargetStart() {
+        val plan = resolveOverlap(at(10), at(12), listOf(event(1, 9, 11)))
+
+        val update = plan.updates.single()
+        assertEquals(1L, update.event.id)
+        assertEquals(at(9), update.startAt)
+        assertEquals(at(10), update.endAt)
+        assertTrue(plan.clones.isEmpty())
+        assertTrue(plan.victims.isEmpty())
+    }
+
+    @Test
+    fun eventStickingOutRightIsTrimmedToTargetEnd() {
+        val plan = resolveOverlap(at(10), at(12), listOf(event(1, 11, 13)))
+
+        val update = plan.updates.single()
+        assertEquals(1L, update.event.id)
+        assertEquals(at(12), update.startAt)
+        assertEquals(at(13), update.endAt)
+        assertTrue(plan.clones.isEmpty())
+        assertTrue(plan.victims.isEmpty())
+    }
+
+    @Test
+    fun eventCoveringBothSidesKeepsLeftAndClonesRight() {
+        val plan = resolveOverlap(at(10), at(12), listOf(event(1, 9, 13, note = "值班", categoryId = 3L)))
+
+        val update = plan.updates.single()
+        assertEquals(at(9), update.startAt)
+        assertEquals(at(10), update.endAt)
+
+        val clone = plan.clones.single()
+        assertEquals("值班", clone.note)
+        assertEquals(at(12), clone.startAt)
+        assertEquals(at(13), clone.endAt)
+        assertEquals(3L, clone.categoryId)
+        assertEquals(1_001L, clone.createdAt)
+        assertTrue(plan.victims.isEmpty())
+    }
+
+    @Test
+    fun coveringTargetWithMatchingEdgesProducesSingleTrim() {
+        // 老记录与目标同起点，只向右超出：右侧残余非空，左侧残余为零宽被丢弃。
+        val right = resolveOverlap(at(10), at(12), listOf(event(1, 10, 13)))
+        assertEquals(1, right.updates.size)
+        assertEquals(at(12), right.updates.single().startAt)
+        assertEquals(at(13), right.updates.single().endAt)
+        assertTrue(right.clones.isEmpty())
+
+        // 老记录与目标同终点，只向左超出：左侧残余非空，右侧残余为零宽被丢弃。
+        val left = resolveOverlap(at(10), at(12), listOf(event(2, 9, 12)))
+        assertEquals(1, left.updates.size)
+        assertEquals(at(9), left.updates.single().startAt)
+        assertEquals(at(10), left.updates.single().endAt)
+        assertTrue(left.clones.isEmpty())
+    }
+
+    @Test
+    fun mixedOthersProduceMixedPlanInInputOrder() {
+        val plan = resolveOverlap(
+            at(10),
+            at(12),
+            listOf(
+                event(1, 9, 11),  // 左侧超出：裁掉尾部
+                event(2, 10, 11), // 整段被盖住：victim
+                event(3, 11, 13), // 右侧超出：裁掉头部
+                event(4, 9, 13),  // 两侧都超出：更新 + 复制
+                event(5, 13, 14), // 没有交集：不动
+            ),
+        )
+
+        assertEquals(listOf(1L, 3L, 4L), plan.updates.map { it.event.id })
+        assertEquals(1, plan.clones.size)
+        assertEquals(listOf(2L), plan.victims.map { it.id })
+    }
+
+    @Test
+    fun zeroWidthAndInvalidEventsAreIgnored() {
+        val plan = resolveOverlap(
+            at(10),
+            at(12),
+            listOf(
+                event(1, 11, 11), // 零宽
+                event(2, 13, 12), // 负宽
+            ),
+        )
+
+        assertTrue(plan.updates.isEmpty())
+        assertTrue(plan.clones.isEmpty())
+        assertTrue(plan.victims.isEmpty())
+    }
+
+    @Test
+    fun invalidTargetProducesEmptyPlan() {
+        val plan = resolveOverlap(at(12), at(10), listOf(event(1, 10, 11)))
+
+        assertTrue(plan.updates.isEmpty())
+        assertTrue(plan.clones.isEmpty())
+        assertTrue(plan.victims.isEmpty())
+    }
+}
+```
+
+## `app/src/test/java/com/example/timelog/domain/StatisticsTest.kt`
+
+```kotlin
+package com.example.timelog.domain
+
+import com.example.timelog.domain.model.Category
+import com.example.timelog.domain.model.CategoryTree
+import com.example.timelog.domain.model.Event
+import com.example.timelog.domain.model.TimelineEvent
+import com.example.timelog.domain.model.buildCategoryTree
+import com.example.timelog.ui.stats.statsLabel
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * 统计领域层纯逻辑测试：窗口边界 / 翻页 / 裁剪 / 层级汇总 / 环比 / 孤立分类 / 范围文案。
+ *
+ * 所有时间都通过参数注入（zone = Asia/Shanghai，now = 2026-11-01T12:00，今天是周日）。
+ */
+class StatisticsTest {
+
+    private val zone: ZoneId = ZoneId.of("Asia/Shanghai")
+    private val nowMillis: Long = at("2026-11-01T12:00")
+    private val today: LocalDate = LocalDate.of(2026, 11, 1)
+
+    // ---------- 窗口边界 ----------
+
+    @Test
+    fun dayWindowCoversWholeDay() {
+        val window = StatsWindows.of(StatsMode.DAY, today, zone)
+        assertEquals(StatsMode.DAY, window.mode)
+        assertEquals(at("2026-11-01T00:00"), window.startAt)
+        assertEquals(at("2026-11-02T00:00"), window.endAt)
+    }
+
+    @Test
+    fun weekWindowStartsOnMonday() {
+        val window = StatsWindows.of(StatsMode.WEEK, today, zone)
+        assertEquals(StatsMode.WEEK, window.mode)
+        assertEquals(at("2026-10-26T00:00"), window.startAt)
+        assertEquals(at("2026-11-02T00:00"), window.endAt)
+    }
+
+    @Test
+    fun weekWindowUsesMondayForMidweekAnchor() {
+        val window = StatsWindows.of(StatsMode.WEEK, LocalDate.of(2026, 10, 28), zone)
+        assertEquals(at("2026-10-26T00:00"), window.startAt)
+        assertEquals(at("2026-11-02T00:00"), window.endAt)
+    }
+
+    @Test
+    fun monthWindowCoversWholeMonth() {
+        val window = StatsWindows.of(StatsMode.MONTH, LocalDate.of(2026, 11, 15), zone)
+        assertEquals(at("2026-11-01T00:00"), window.startAt)
+        assertEquals(at("2026-12-01T00:00"), window.endAt)
+    }
+
+    @Test
+    fun yearWindowCoversWholeYear() {
+        val window = StatsWindows.of(StatsMode.YEAR, LocalDate.of(2026, 4, 5), zone)
+        assertEquals(at("2026-01-01T00:00"), window.startAt)
+        assertEquals(at("2027-01-01T00:00"), window.endAt)
+    }
+
+    @Test
+    fun customWindowIncludesEndDate() {
+        val window = StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 15), zone)
+        assertEquals(StatsMode.CUSTOM, window.mode)
+        assertEquals(at("2026-10-01T00:00"), window.startAt)
+        assertEquals(at("2026-10-16T00:00"), window.endAt)
+    }
+
+    @Test
+    fun customWindowSwapsReversedDatesAndSupportsSingleDay() {
+        assertEquals(
+            StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 15), zone),
+            StatsWindows.custom(LocalDate.of(2026, 10, 15), LocalDate.of(2026, 10, 1), zone),
+        )
+        val singleDay = StatsWindows.custom(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 1), zone)
+        assertEquals(at("2026-11-01T00:00"), singleDay.startAt)
+        assertEquals(at("2026-11-02T00:00"), singleDay.endAt)
+    }
+
+    @Test
+    fun shiftMovesEachPeriodByOne() {
+        assertEquals(
+            at("2026-10-31T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.DAY, today, zone), -1, zone).startAt,
+        )
+        assertEquals(
+            at("2026-11-02T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.WEEK, today, zone), 1, zone).startAt,
+        )
+        assertEquals(
+            at("2025-12-01T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.MONTH, LocalDate.of(2026, 1, 15), zone), -1, zone).startAt,
+        )
+        assertEquals(
+            at("2027-01-01T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.YEAR, LocalDate.of(2026, 4, 5), zone), 1, zone).startAt,
+        )
+        val day = StatsWindows.of(StatsMode.DAY, today, zone)
+        assertEquals(day, StatsWindows.shift(day, 0, zone))
+    }
+
+    @Test
+    fun shiftKeepsCustomWindowLength() {
+        val window = StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 7), zone)
+        val next = StatsWindows.shift(window, 1, zone)
+        assertEquals(at("2026-10-08T00:00"), next.startAt)
+        assertEquals(at("2026-10-15T00:00"), next.endAt)
+        val previous = StatsWindows.shift(window, -1, zone)
+        assertEquals(at("2026-09-24T00:00"), previous.startAt)
+        assertEquals(at("2026-10-01T00:00"), previous.endAt)
+    }
+
+    // ---------- 聚合 ----------
+
+    @Test
+    fun emptyWindowHasNoUsages() {
+        val summary = build()
+        assertEquals(0L, summary.totalMillis)
+        assertEquals(0, summary.eventCount)
+        assertTrue(summary.roots.isEmpty())
+        assertEquals(0L, summary.previousTotalMillis)
+    }
+
+    @Test
+    fun clipsEventsToWindowAndNow() {
+        val summary = build(
+            event(1, "2026-10-31T23:00", "2026-11-01T01:00"),
+            event(2, "2026-11-01T11:00", "2026-11-01T13:00"),
+        )
+        // 第一条只算进入窗口的 1 小时，第二条被 now(12:00) 截断，同样只剩 1 小时。
+        assertEquals(2 * HOUR, summary.totalMillis)
+        assertEquals(2, summary.eventCount)
+        val root = summary.roots.single()
+        assertEquals(2 * HOUR, root.millis)
+        assertEquals(2, root.eventCount)
+    }
+
+    @Test
+    fun overlappingEventsCountIndividually() {
+        val summary = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T10:00"),
+            event(2, "2026-11-01T09:00", "2026-11-01T11:00"),
+        )
+        assertEquals(4 * HOUR, summary.totalMillis)
+        assertEquals(2, summary.eventCount)
+        assertEquals(4 * HOUR, summary.roots.single().millis)
+    }
+
+    @Test
+    fun ignoresEventsOutsideWindow() {
+        val summary = build(event(1, "2026-10-01T08:00", "2026-10-01T09:00"))
+        assertEquals(0L, summary.totalMillis)
+        assertTrue(summary.roots.isEmpty())
+    }
+
+    @Test
+    fun rollsSubtreeDurationAndCountIntoRoot() {
+        val summary = build(
+            event(1, "2026-11-01T09:00", "2026-11-01T10:00", categoryId = 3L, path = "工作 / 执行 / 编码"),
+            event(2, "2026-11-01T10:00", "2026-11-01T10:30", categoryId = 6L, path = "工作 / 执行 / 编码 / 深潜"),
+            event(3, "2026-11-01T10:30", "2026-11-01T10:45", categoryId = 1L, path = "工作"),
+        )
+        val root = summary.roots.single()
+        assertEquals(1L, root.categoryId)
+        assertEquals(105 * MINUTE, root.millis)
+        assertEquals(3, root.eventCount)
+        assertEquals(0, root.depth)
+
+        val second = root.children.single()
+        assertEquals(2L, second.categoryId)
+        assertEquals(90 * MINUTE, second.millis)
+        assertEquals(2, second.eventCount)
+        assertEquals(1, second.depth)
+
+        // 第三层保留，但更深的分类不再展开（时长仍计入 [third] 与祖先）。
+        val third = second.children.single()
+        assertEquals(3L, third.categoryId)
+        assertEquals(90 * MINUTE, third.millis)
+        assertEquals(2, third.eventCount)
+        assertEquals(2, third.depth)
+        assertTrue(third.children.isEmpty())
+    }
+
+    @Test
+    fun sortsRootsByDurationThenName() {
+        val busy = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T10:00", categoryId = 4L, path = "生活"),
+            event(2, "2026-11-01T10:00", "2026-11-01T11:00", categoryId = 1L, path = "工作"),
+        )
+        assertEquals(listOf(4L, 1L), busy.roots.map { it.categoryId })
+
+        val tied = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T09:00", categoryId = 1L, path = "工作"),
+            event(2, "2026-11-01T09:00", "2026-11-01T10:00", categoryId = 4L, path = "生活"),
+        )
+        assertEquals(listOf("工作", "生活"), tied.roots.map { it.name })
+    }
+
+    @Test
+    fun synthesizesUnknownCategoryAsLastRoot() {
+        val summary = build(
+            event(1, "2026-11-01T07:00", "2026-11-01T10:00", categoryId = 99L, path = "阅读 / 文学", color = 0xFFFF0000L),
+            event(2, "2026-11-01T10:00", "2026-11-01T12:00", categoryId = 1L, path = "工作"),
+        )
+        assertEquals(2, summary.roots.size)
+        assertEquals(1L, summary.roots[0].categoryId)
+        val orphan = summary.roots[1]
+        assertEquals(StatsBuilder.ORPHAN_CATEGORY_ID, orphan.categoryId)
+        assertEquals("阅读", orphan.name)
+        assertEquals(3 * HOUR, orphan.millis)
+        assertEquals(1, orphan.eventCount)
+        assertEquals(0xFFFF0000L, orphan.colorHex)
+        assertEquals(0, orphan.depth)
+    }
+
+    @Test
+    fun mergesUnknownCategoriesWithSameRootName() {
+        val summary = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T08:30", categoryId = 98L, path = "阅读 / A", color = 0xFF112233L),
+            event(2, "2026-11-01T08:30", "2026-11-01T09:15", categoryId = 99L, path = "阅读 / B", color = 0xFF445566L),
+        )
+        val orphan = summary.roots.single()
+        assertEquals("阅读", orphan.name)
+        assertEquals(75 * MINUTE, orphan.millis)
+        assertEquals(2, orphan.eventCount)
+        assertEquals(0xFF112233L, orphan.colorHex)
+    }
+
+    @Test
+    fun blankCategoryPathFallsBackToUnknownName() {
+        val summary = build(event(1, "2026-11-01T08:00", "2026-11-01T09:00", categoryId = 99L, path = ""))
+        assertEquals("未分类", summary.roots.single().name)
+    }
+
+    // ---------- 环比 ----------
+
+    @Test
+    fun previousWindowAlignsElapsedTime() {
+        val summary = build(
+            event(1, "2026-11-01T10:00", "2026-11-01T11:00"),
+            event(2, "2026-10-31T03:00", "2026-10-31T04:00"),
+            // now = 12:00，上一窗口只对齐到 10-31 12:00，下面这条不进入环比。
+            event(3, "2026-10-31T18:00", "2026-10-31T19:00"),
+        )
+        assertEquals(HOUR, summary.totalMillis)
+        assertEquals(HOUR, summary.previousTotalMillis)
+        assertEquals(HOUR, summary.roots.single().previousMillis)
+    }
+
+    @Test
+    fun previousWindowUsesFullPeriodWhenWindowIsInPast() {
+        val window = StatsWindows.of(StatsMode.DAY, LocalDate.of(2026, 10, 25), zone)
+        val summary = build(
+            event(1, "2026-10-25T09:00", "2026-10-25T10:00"),
+            event(2, "2026-10-24T20:00", "2026-10-24T21:00"),
+            window = window,
+        )
+        assertEquals(HOUR, summary.roots.single().previousMillis)
+        assertEquals(HOUR, summary.previousTotalMillis)
+    }
+
+    @Test
+    fun previousMillisIsZeroForNewCategory() {
+        val summary = build(event(1, "2026-11-01T10:00", "2026-11-01T11:00"))
+        assertEquals(0L, summary.roots.single().previousMillis)
+        assertEquals(0L, summary.previousTotalMillis)
+        assertNull(summary.roots.single().deltaRatio)
+    }
+
+    @Test
+    fun deltaRatioReflectsChange() {
+        val increase = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T10:00"),
+            event(2, "2026-10-31T03:00", "2026-10-31T04:00"),
+        )
+        assertEquals(1f, increase.roots.single().deltaRatio!!, 0.0001f)
+
+        val decrease = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T09:00"),
+            event(2, "2026-10-31T03:00", "2026-10-31T05:00"),
+        )
+        assertEquals(-0.5f, decrease.roots.single().deltaRatio!!, 0.0001f)
+    }
+
+    // ---------- 范围文案 ----------
+
+    @Test
+    fun dayLabelPrefixesTodayAndAddsYearWhenNeeded() {
+        assertEquals(
+            "今天 · 11月1日 周日",
+            statsLabel(StatsWindows.of(StatsMode.DAY, today, zone), nowMillis, zone),
+        )
+        assertEquals(
+            "10月31日 周六",
+            statsLabel(StatsWindows.of(StatsMode.DAY, LocalDate.of(2026, 10, 31), zone), nowMillis, zone),
+        )
+        assertEquals(
+            "2025年11月1日 周六",
+            statsLabel(StatsWindows.of(StatsMode.DAY, LocalDate.of(2025, 11, 1), zone), nowMillis, zone),
+        )
+    }
+
+    @Test
+    fun weekLabelUsesEnDashAndAddsYearsAcrossNewYear() {
+        assertEquals(
+            "10月26日 – 11月1日",
+            statsLabel(StatsWindows.of(StatsMode.WEEK, today, zone), nowMillis, zone),
+        )
+        assertEquals(
+            "2025年12月29日 – 2026年1月4日",
+            statsLabel(StatsWindows.of(StatsMode.WEEK, LocalDate.of(2026, 1, 1), zone), nowMillis, zone),
+        )
+    }
+
+    @Test
+    fun monthAndYearLabels() {
+        assertEquals(
+            "2026年11月",
+            statsLabel(StatsWindows.of(StatsMode.MONTH, today, zone), nowMillis, zone),
+        )
+        assertEquals(
+            "2026年",
+            statsLabel(StatsWindows.of(StatsMode.YEAR, today, zone), nowMillis, zone),
+        )
+    }
+
+    @Test
+    fun customRangeLabelAddsYearsAcrossNewYear() {
+        assertEquals(
+            "10月1日 – 10月15日",
+            statsLabel(StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 15), zone), nowMillis, zone),
+        )
+        assertEquals(
+            "2025年12月30日 – 2026年1月2日",
+            statsLabel(StatsWindows.custom(LocalDate.of(2025, 12, 30), LocalDate.of(2026, 1, 2), zone), nowMillis, zone),
+        )
+    }
+
+    // ---------- 夹具 ----------
+
+    private fun at(value: String): Long =
+        LocalDateTime.parse(value).atZone(zone).toInstant().toEpochMilli()
+
+    private fun event(
+        id: Long,
+        start: String,
+        end: String,
+        categoryId: Long = 1L,
+        path: String = "工作",
+        color: Long = WORK_COLOR,
+    ): TimelineEvent {
+        val startAt = at(start)
+        return TimelineEvent(
+            event = Event(
+                id = id,
+                note = null,
+                startAt = startAt,
+                endAt = at(end),
+                categoryId = categoryId,
+                createdAt = startAt,
+                updatedAt = startAt,
+            ),
+            categoryPath = path,
+            categoryColor = color,
+        )
+    }
+
+    private fun build(
+        vararg events: TimelineEvent,
+        window: StatsWindow = StatsWindows.of(StatsMode.DAY, today, zone),
+        now: Long = nowMillis,
+        tree: CategoryTree = tree(),
+    ): StatsSummary = StatsBuilder.build(events.toList(), tree, window, now, zone)
+
+    /** 工作(1) / 执行(2) / 编码(3) / 深潜(6)，生活(4) / 运动(5)。 */
+    private fun tree(): CategoryTree = buildCategoryTree(
+        listOf(
+            category(1L, "工作", null, WORK_COLOR),
+            category(2L, "执行", 1L, 0xFF4C7BE8),
+            category(3L, "编码", 2L, 0xFF2F6FE4),
+            category(6L, "深潜", 3L, 0xFF3F51B5),
+            category(4L, "生活", null, 0xFF8B5CF6),
+            category(5L, "运动", 4L, 0xFF8B5CF6),
+        ),
+    )
+
+    private fun category(id: Long, name: String, parentId: Long?, colorHex: Long): Category =
+        Category(
+            id = id,
+            name = name,
+            parentId = parentId,
+            sortOrder = id.toInt(),
+            colorHex = colorHex,
+        )
+
+    private companion object {
+        private const val MINUTE = 60_000L
+        private const val HOUR = 60 * MINUTE
+        private const val WORK_COLOR = 0xFF4C7BE8L
+    }
+}
 ```
 
 ## `app/src/test/java/com/example/timelog/domain/TimelineBuilderTest.kt`
@@ -3522,6 +7009,94 @@ Pick one and the master 512 px file is ready for adaptive-icon export (foregroun
 Type: 時 is Yu Mincho Demibold in A and the overview captions, Microsoft YaHei Bold in the D seal.
 E's ground is pine-soft so the set reads as a family without using the paper field five times.
 C's ochre is the category ochre #C07A2B, the only category colour used here.
+```
+
+## `design/icons/build_launcher_assets.py`
+
+```python
+"""从 design/icons/icon-A.png 生成 Android 自适应图标前景（透明背景 + 纸白「時」）。
+
+用法（仓库根目录）：
+    python design/icons/build_launcher_assets.py
+
+前景画布为 108dp（自适应图标标准），字形高度按母版比例取 43dp（约可见圆形直径 72dp 的 59%），
+背景由 res/values/colors.xml 的 ic_launcher_background (#2F5D50) 提供。
+"""
+
+import os
+from PIL import Image, ImageDraw
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SRC = os.path.join(ROOT, "design", "icons", "icon-A.png")
+RES = os.path.join(ROOT, "app", "src", "main", "res")
+
+PINE = (0x2F, 0x5D, 0x50)
+PAPER = (0xFB, 0xFA, 0xF7)
+GLYPH_DP = 43.0       # 字形高度（dp）
+CANVAS_DP = 108.0     # 自适应图标前景画布
+SUPERSAMPLE = 8       # 母版渲染倍数
+
+DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
+
+
+def glyph_layer() -> Image.Image:
+    im = Image.open(SRC).convert("RGB")
+    w, h = im.size
+    px = im.load()
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    op = out.load()
+    pine_lum = 0.2126 * PINE[0] + 0.7152 * PINE[1] + 0.0722 * PINE[2]
+    paper_lum = 0.2126 * PAPER[0] + 0.7152 * PAPER[1] + 0.0722 * PAPER[2]
+    for y in range(h):
+        for x in range(w):
+            r, g, b = px[x, y]
+            lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            alpha = (lum - pine_lum) / (paper_lum - pine_lum)
+            alpha = max(0.0, min(1.0, alpha))
+            if alpha > 0.0:
+                op[x, y] = PAPER + (int(round(alpha * 255)),)
+    return out
+
+
+def main() -> None:
+    glyph = glyph_layer()
+    bbox = glyph.getbbox()
+    glyph = glyph.crop(bbox)
+    gw, gh = glyph.size
+
+    canvas_px = int(round(CANVAS_DP * SUPERSAMPLE))
+    glyph_h_px = int(round(GLYPH_DP * SUPERSAMPLE))
+    glyph_w_px = int(round(glyph_h_px * gw / gh))
+    master = glyph.resize((glyph_w_px, glyph_h_px), Image.LANCZOS)
+
+    canvas = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    canvas.paste(master, ((canvas_px - glyph_w_px) // 2, (canvas_px - glyph_h_px) // 2), master)
+
+    for name, scale in DENSITIES.items():
+        size = int(round(CANVAS_DP * scale))
+        out_dir = os.path.join(RES, "drawable-" + name)
+        os.makedirs(out_dir, exist_ok=True)
+        img = canvas.resize((size, size), Image.LANCZOS)
+        img.save(os.path.join(out_dir, "ic_launcher_foreground.png"))
+        print("wrote", os.path.join("drawable-" + name, "ic_launcher_foreground.png"), size)
+
+    # 预览：108dp 画布 + 72dp 圆形遮罩，浅/深两种桌面底色
+    preview = Image.new("RGB", (760, 320), (0xE9, 0xE7, 0xE2))
+    draw = ImageDraw.Draw(preview)
+    for i, bg in enumerate([(0xE9, 0xE7, 0xE2), (0x17, 0x1A, 0x18)]):
+        block = Image.new("RGB", (380, 320), bg)
+        icon_bg = Image.new("RGBA", (288, 288), PINE + (255,))
+        icon = Image.alpha_composite(icon_bg, canvas.resize((288, 288), Image.LANCZOS))
+        mask = Image.new("L", (288, 288), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, 287, 287), fill=255)
+        block.paste(icon, (46, 16), mask)
+        preview.paste(block, (i * 380, 0))
+    preview.save(os.path.join(ROOT, ".tools", "icon-preview.png"))
+    print("wrote .tools/icon-preview.png")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
 ## `design/icons/render.py`

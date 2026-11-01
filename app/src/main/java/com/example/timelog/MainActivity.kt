@@ -49,7 +49,7 @@ import com.example.timelog.ui.category.CategoryManageViewModel
 import com.example.timelog.ui.data.DataTransferSection
 import com.example.timelog.ui.data.DataTransferViewModel
 import com.example.timelog.ui.home.HomeViewModel
-import com.example.timelog.ui.home.RecordBar
+import com.example.timelog.ui.home.TimelineFabOverlay
 import com.example.timelog.ui.home.TimelinePage
 import com.example.timelog.ui.record.RecordSheet
 import com.example.timelog.ui.record.RecordViewModel
@@ -80,8 +80,8 @@ private const val OVERLAY_SEARCH = "search"
 private const val OVERLAY_CATEGORIES = "categories"
 
 /**
- * 应用外壳：紧凑顶栏 + 左右滑动的主界面/统计页 + 时间轴页底部的「完成」。
- * 搜索与分类是整屏浮层（覆盖外壳），记录编辑仍是底部弹窗。
+ * 应用外壳：紧凑顶栏 + 左右滑动的主界面/统计页。
+ * 时间轴页的「記一笔」入口是右下角蓝底白色加号的浮动按钮；搜索与分类是整屏浮层。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -140,7 +140,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 state = pagerState,
                 modifier = Modifier
                     .weight(1f)
-                    .then(if (currentPage == PAGE_STATS) Modifier.navigationBarsPadding() else Modifier),
+                    .navigationBarsPadding(),
             ) { page ->
                 when (page) {
                     PAGE_TIMELINE -> TimelinePage(
@@ -154,15 +154,19 @@ private fun TimeLogApp(repository: TimeLogRepository) {
 
                     else -> StatisticsScreen(
                         state = statisticsState,
-                        onPeriodSelected = statisticsViewModel::selectPeriod,
+                        onModeSelected = statisticsViewModel::selectMode,
+                        onPrevious = statisticsViewModel::goPrevious,
+                        onNext = statisticsViewModel::goNext,
+                        onCustomRangeSelected = statisticsViewModel::setCustomRange,
                         footer = { DataTransferSection(viewModel = transferViewModel) },
                     )
                 }
             }
+        }
 
-            if (currentPage == PAGE_TIMELINE) {
-                RecordBar(onNewRecord = homeViewModel::openNewRecord)
-            }
+        // 浮动「+」入口：叠在内容之上，不占用列表高度；只在時記页显示。
+        if (currentPage == PAGE_TIMELINE) {
+            TimelineFabOverlay(onNewRecord = homeViewModel::openNewRecord)
         }
 
         if (overlay == OVERLAY_SEARCH) {
@@ -215,7 +219,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
     }
 }
 
-/** 紧凑顶栏：不再用大号 30sp 标题，两个页签本身就是切换入口，左侧留 24dp 与时间轴对齐。 */
+/** 紧凑顶栏：两个页签同为 23sp serif 样式，选中的用墨色、未选的用次要色。 */
 @Composable
 private fun AppHeader(
     page: Int,
@@ -223,8 +227,12 @@ private fun AppHeader(
     onSearch: () -> Unit,
     onOpenCategories: () -> Unit,
 ) {
-    val accent = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val active = MaterialTheme.colorScheme.onBackground
+    val tabStyle = MaterialTheme.typography.headlineMedium.copy(
+        fontSize = 23.sp,
+        lineHeight = 28.sp,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -233,16 +241,9 @@ private fun AppHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "時計",
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontSize = 23.sp,
-                lineHeight = 28.sp,
-            ),
-            color = if (page == PAGE_TIMELINE) {
-                MaterialTheme.colorScheme.onBackground
-            } else {
-                muted
-            },
+            text = "時記",
+            style = tabStyle,
+            color = if (page == PAGE_TIMELINE) active else muted,
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .clickable { onSelectPage(PAGE_TIMELINE) }
@@ -250,9 +251,9 @@ private fun AppHeader(
         )
         Spacer(Modifier.width(16.dp))
         Text(
-            text = "统计",
-            style = MaterialTheme.typography.titleLarge.copy(fontSize = 17.sp, lineHeight = 24.sp),
-            color = if (page == PAGE_STATS) accent else muted,
+            text = "時計",
+            style = tabStyle,
+            color = if (page == PAGE_STATS) active else muted,
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .clickable { onSelectPage(PAGE_STATS) }

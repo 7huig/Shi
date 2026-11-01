@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.timelog"
         minSdk = 29
         targetSdk = 31
-        versionCode = 4
-        versionName = "2.2"
+        versionCode = 6
+        versionName = "0.1.0"
     }
 
     buildTypes {

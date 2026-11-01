@@ -1,291 +1,407 @@
 package com.example.timelog.domain
 
+import com.example.timelog.domain.model.Category
+import com.example.timelog.domain.model.CategoryTree
 import com.example.timelog.domain.model.Event
 import com.example.timelog.domain.model.TimelineEvent
+import com.example.timelog.domain.model.buildCategoryTree
+import com.example.timelog.ui.stats.statsLabel
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * 统计领域层纯逻辑测试：窗口边界 / 翻页 / 裁剪 / 层级汇总 / 环比 / 孤立分类 / 范围文案。
+ *
+ * 所有时间都通过参数注入（zone = Asia/Shanghai，now = 2026-11-01T12:00，今天是周日）。
+ */
 class StatisticsTest {
 
     private val zone: ZoneId = ZoneId.of("Asia/Shanghai")
-
-    /** 2026-11-01 是周日，所以「本周」从 2026-10-26（周一）开始。 */
+    private val nowMillis: Long = at("2026-11-01T12:00")
     private val today: LocalDate = LocalDate.of(2026, 11, 1)
-    private val now: Long = at("2026-11-01T12:00")
 
-    private val hour: Long = 3_600_000L
-    private val minute: Long = 60_000L
+    // ---------- 窗口边界 ----------
 
     @Test
-    fun emptyEventsProduceZeroSummaryWithSevenEmptyDays() {
-        val summary = StatsBuilder.build(emptyList(), StatsPeriod.TODAY, now, zone)
-
-        assertEquals(StatsPeriod.TODAY, summary.period)
-        assertEquals(0L, summary.totalMillis)
-        assertEquals(0, summary.eventCount)
-        assertTrue(summary.categories.isEmpty())
-        assertEquals(7, summary.last7Days.size)
-        assertEquals(
-            (6 downTo 0).map { today.minusDays(it.toLong()) },
-            summary.last7Days.map { it.date },
-        )
-        assertEquals(today.minusDays(6), summary.last7Days.first().date)
-        assertEquals(today, summary.last7Days.last().date)
-        assertTrue(summary.last7Days.all { it.millis == 0L })
+    fun dayWindowCoversWholeDay() {
+        val window = StatsWindows.of(StatsMode.DAY, today, zone)
+        assertEquals(StatsMode.DAY, window.mode)
+        assertEquals(at("2026-11-01T00:00"), window.startAt)
+        assertEquals(at("2026-11-02T00:00"), window.endAt)
     }
 
     @Test
-    fun todayClipsEventAtMidnightAndAtNow() {
+    fun weekWindowStartsOnMonday() {
+        val window = StatsWindows.of(StatsMode.WEEK, today, zone)
+        assertEquals(StatsMode.WEEK, window.mode)
+        assertEquals(at("2026-10-26T00:00"), window.startAt)
+        assertEquals(at("2026-11-02T00:00"), window.endAt)
+    }
+
+    @Test
+    fun weekWindowUsesMondayForMidweekAnchor() {
+        val window = StatsWindows.of(StatsMode.WEEK, LocalDate.of(2026, 10, 28), zone)
+        assertEquals(at("2026-10-26T00:00"), window.startAt)
+        assertEquals(at("2026-11-02T00:00"), window.endAt)
+    }
+
+    @Test
+    fun monthWindowCoversWholeMonth() {
+        val window = StatsWindows.of(StatsMode.MONTH, LocalDate.of(2026, 11, 15), zone)
+        assertEquals(at("2026-11-01T00:00"), window.startAt)
+        assertEquals(at("2026-12-01T00:00"), window.endAt)
+    }
+
+    @Test
+    fun yearWindowCoversWholeYear() {
+        val window = StatsWindows.of(StatsMode.YEAR, LocalDate.of(2026, 4, 5), zone)
+        assertEquals(at("2026-01-01T00:00"), window.startAt)
+        assertEquals(at("2027-01-01T00:00"), window.endAt)
+    }
+
+    @Test
+    fun customWindowIncludesEndDate() {
+        val window = StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 15), zone)
+        assertEquals(StatsMode.CUSTOM, window.mode)
+        assertEquals(at("2026-10-01T00:00"), window.startAt)
+        assertEquals(at("2026-10-16T00:00"), window.endAt)
+    }
+
+    @Test
+    fun customWindowSwapsReversedDatesAndSupportsSingleDay() {
+        assertEquals(
+            StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 15), zone),
+            StatsWindows.custom(LocalDate.of(2026, 10, 15), LocalDate.of(2026, 10, 1), zone),
+        )
+        val singleDay = StatsWindows.custom(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 1), zone)
+        assertEquals(at("2026-11-01T00:00"), singleDay.startAt)
+        assertEquals(at("2026-11-02T00:00"), singleDay.endAt)
+    }
+
+    @Test
+    fun shiftMovesEachPeriodByOne() {
+        assertEquals(
+            at("2026-10-31T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.DAY, today, zone), -1, zone).startAt,
+        )
+        assertEquals(
+            at("2026-11-02T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.WEEK, today, zone), 1, zone).startAt,
+        )
+        assertEquals(
+            at("2025-12-01T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.MONTH, LocalDate.of(2026, 1, 15), zone), -1, zone).startAt,
+        )
+        assertEquals(
+            at("2027-01-01T00:00"),
+            StatsWindows.shift(StatsWindows.of(StatsMode.YEAR, LocalDate.of(2026, 4, 5), zone), 1, zone).startAt,
+        )
+        val day = StatsWindows.of(StatsMode.DAY, today, zone)
+        assertEquals(day, StatsWindows.shift(day, 0, zone))
+    }
+
+    @Test
+    fun shiftKeepsCustomWindowLength() {
+        val window = StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 7), zone)
+        val next = StatsWindows.shift(window, 1, zone)
+        assertEquals(at("2026-10-08T00:00"), next.startAt)
+        assertEquals(at("2026-10-15T00:00"), next.endAt)
+        val previous = StatsWindows.shift(window, -1, zone)
+        assertEquals(at("2026-09-24T00:00"), previous.startAt)
+        assertEquals(at("2026-10-01T00:00"), previous.endAt)
+    }
+
+    // ---------- 聚合 ----------
+
+    @Test
+    fun emptyWindowHasNoUsages() {
+        val summary = build()
+        assertEquals(0L, summary.totalMillis)
+        assertEquals(0, summary.eventCount)
+        assertTrue(summary.roots.isEmpty())
+        assertEquals(0L, summary.previousTotalMillis)
+    }
+
+    @Test
+    fun clipsEventsToWindowAndNow() {
         val summary = build(
             event(1, "2026-10-31T23:00", "2026-11-01T01:00"),
-            period = StatsPeriod.TODAY,
+            event(2, "2026-11-01T11:00", "2026-11-01T13:00"),
         )
-
-        assertEquals(hour, summary.totalMillis)
-        assertEquals(1, summary.eventCount)
-        val category = summary.categories.single()
-        assertEquals("工作", category.rootName)
-        assertEquals(hour, category.millis)
-        // 「最近 7 天」按自然日拆分，跨午夜的那一小时各归各天。
-        assertEquals(hour, dayMillis(summary, "2026-10-31"))
-        assertEquals(hour, dayMillis(summary, "2026-11-01"))
-    }
-
-    @Test
-    fun todayIgnoresEventsOutsideTheDay() {
-        val summary = build(
-            event(1, "2026-10-31T09:00", "2026-10-31T10:00"),
-            period = StatsPeriod.TODAY,
-        )
-
-        assertEquals(0L, summary.totalMillis)
-        assertEquals(0, summary.eventCount)
-        assertTrue(summary.categories.isEmpty())
-        assertEquals(hour, dayMillis(summary, "2026-10-31"))
-        assertEquals(0L, dayMillis(summary, "2026-11-01"))
-    }
-
-    @Test
-    fun weekStartsOnMonday() {
-        val summary = build(
-            event(1, "2026-10-25T09:00", "2026-10-25T10:00"), // 上周日，范围外
-            event(2, "2026-10-26T00:00", "2026-10-26T01:00"), // 本周一 00:00 起算
-            event(3, "2026-10-28T10:00", "2026-10-28T11:00"),
-            event(4, "2026-11-01T08:00", "2026-11-01T09:00"),
-            period = StatsPeriod.WEEK,
-        )
-
-        assertEquals(3 * hour, summary.totalMillis)
-        assertEquals(3, summary.eventCount)
-        assertEquals(3 * hour, summary.categories.single().millis)
-    }
-
-    @Test
-    fun monthStartsOnFirstDayAndAllStartsAtEarliestEvent() {
-        val events = listOf(
-            event(1, "2026-10-31T09:00", "2026-10-31T10:00"),
-            event(2, "2026-11-01T08:00", "2026-11-01T09:00"),
-        )
-
-        val month = StatsBuilder.build(events, StatsPeriod.MONTH, now, zone)
-        assertEquals(hour, month.totalMillis)
-        assertEquals(1, month.eventCount)
-
-        val all = StatsBuilder.build(events, StatsPeriod.ALL, now, zone)
-        assertEquals(2 * hour, all.totalMillis)
-        assertEquals(2, all.eventCount)
-    }
-
-    @Test
-    fun allClipsEventsThatEndAfterNow() {
-        val summary = build(
-            event(1, "2026-11-01T11:00", "2026-11-01T15:00"),
-            period = StatsPeriod.ALL,
-        )
-
-        assertEquals(hour, summary.totalMillis)
-        assertEquals(hour, build(event(1, "2026-11-01T11:00", "2026-11-01T15:00"), StatsPeriod.TODAY).totalMillis)
-    }
-
-    @Test
-    fun categoriesGroupByRootAndSortByDurationDescending() {
-        val summary = build(
-            event(1, "2026-11-01T08:00", "2026-11-01T11:00", path = "生活 / 运动", color = 0xFF22AA22),
-            event(2, "2026-11-01T09:00", "2026-11-01T10:00", path = "工作 / 执行"),
-            event(3, "2026-11-01T10:00", "2026-11-01T10:30", path = "工作 / 会议"),
-            period = StatsPeriod.TODAY,
-        )
-
-        assertEquals(4 * hour + 30 * minute, summary.totalMillis)
-        assertEquals(3, summary.eventCount)
-        assertEquals(listOf("生活", "工作"), summary.categories.map { it.rootName })
-        assertEquals(3 * hour, summary.categories[0].millis)
-        assertEquals(hour + 30 * minute, summary.categories[1].millis)
-        // 代表色来自该根下最早开始的那条事件（工作 / 执行）。
-        assertEquals(0xFF4C7BE8, summary.categories[1].colorHex)
-        assertEquals(0xFF22AA22, summary.categories[0].colorHex)
-    }
-
-    @Test
-    fun categoryColorComesFromEarliestEventInRootIgnoringInputOrder() {
-        val later = event(2, "2026-11-01T10:00", "2026-11-01T11:00", path = "工作 / 会议", color = 0xFF111111)
-        val earlier = event(1, "2026-11-01T09:00", "2026-11-01T10:00", path = "工作 / 执行", color = 0xFF4C7BE8)
-
-        val summary = StatsBuilder.build(listOf(later, earlier), StatsPeriod.TODAY, now, zone)
-
-        assertEquals(0xFF4C7BE8, summary.categories.single().colorHex)
-    }
-
-    @Test
-    fun categoryColorUsesLowerIdWhenStartTimesTie() {
-        val higherId = event(5, "2026-11-01T09:00", "2026-11-01T10:00", color = 0xFF111111)
-        val lowerId = event(2, "2026-11-01T09:00", "2026-11-01T10:00", color = 0xFF4C7BE8)
-
-        val summary = StatsBuilder.build(listOf(higherId, lowerId), StatsPeriod.TODAY, now, zone)
-
-        assertEquals(0xFF4C7BE8, summary.categories.single().colorHex)
-    }
-
-    @Test
-    fun equalDurationsBreakTiesByRootName() {
-        val summary = build(
-            event(1, "2026-11-01T08:00", "2026-11-01T09:00", path = "Beta / b"),
-            event(2, "2026-11-01T09:00", "2026-11-01T10:00", path = "Alpha / a"),
-            period = StatsPeriod.TODAY,
-        )
-
-        assertEquals(listOf("Alpha", "Beta"), summary.categories.map { it.rootName })
-    }
-
-    @Test
-    fun singleLevelCategoryPathIsItsOwnRoot() {
-        val summary = build(
-            event(1, "2026-11-01T09:00", "2026-11-01T10:00", path = "未分类"),
-            period = StatsPeriod.TODAY,
-        )
-
-        assertEquals("未分类", summary.categories.single().rootName)
-    }
-
-    @Test
-    fun overlappingEventsAreCountedPerEvent() {
-        // 口径：逐条事件累加，重叠不合并（与分类明细可核对）。
-        val summary = build(
-            event(1, "2026-11-01T09:00", "2026-11-01T10:00"),
-            event(2, "2026-11-01T09:00", "2026-11-01T10:00"),
-            period = StatsPeriod.TODAY,
-        )
-
-        assertEquals(2 * hour, summary.totalMillis)
+        // 第一条只算进入窗口的 1 小时，第二条被 now(12:00) 截断，同样只剩 1 小时。
+        assertEquals(2 * HOUR, summary.totalMillis)
         assertEquals(2, summary.eventCount)
-        assertEquals(2 * hour, summary.categories.single().millis)
+        val root = summary.roots.single()
+        assertEquals(2 * HOUR, root.millis)
+        assertEquals(2, root.eventCount)
     }
 
     @Test
-    fun last7DaysIsSevenDayWindowEndingTodayWithZeros() {
+    fun overlappingEventsCountIndividually() {
         val summary = build(
-            event(1, "2026-10-26T10:00", "2026-10-26T11:00"), // 窗口第一天
-            event(2, "2026-11-01T09:00", "2026-11-01T10:00"), // 今天
-            period = StatsPeriod.TODAY,
+            event(1, "2026-11-01T08:00", "2026-11-01T10:00"),
+            event(2, "2026-11-01T09:00", "2026-11-01T11:00"),
         )
+        assertEquals(4 * HOUR, summary.totalMillis)
+        assertEquals(2, summary.eventCount)
+        assertEquals(4 * HOUR, summary.roots.single().millis)
+    }
 
+    @Test
+    fun ignoresEventsOutsideWindow() {
+        val summary = build(event(1, "2026-10-01T08:00", "2026-10-01T09:00"))
+        assertEquals(0L, summary.totalMillis)
+        assertTrue(summary.roots.isEmpty())
+    }
+
+    @Test
+    fun rollsSubtreeDurationAndCountIntoRoot() {
+        val summary = build(
+            event(1, "2026-11-01T09:00", "2026-11-01T10:00", categoryId = 3L, path = "工作 / 执行 / 编码"),
+            event(2, "2026-11-01T10:00", "2026-11-01T10:30", categoryId = 6L, path = "工作 / 执行 / 编码 / 深潜"),
+            event(3, "2026-11-01T10:30", "2026-11-01T10:45", categoryId = 1L, path = "工作"),
+        )
+        val root = summary.roots.single()
+        assertEquals(1L, root.categoryId)
+        assertEquals(105 * MINUTE, root.millis)
+        assertEquals(3, root.eventCount)
+        assertEquals(0, root.depth)
+
+        val second = root.children.single()
+        assertEquals(2L, second.categoryId)
+        assertEquals(90 * MINUTE, second.millis)
+        assertEquals(2, second.eventCount)
+        assertEquals(1, second.depth)
+
+        // 第三层保留，但更深的分类不再展开（时长仍计入 [third] 与祖先）。
+        val third = second.children.single()
+        assertEquals(3L, third.categoryId)
+        assertEquals(90 * MINUTE, third.millis)
+        assertEquals(2, third.eventCount)
+        assertEquals(2, third.depth)
+        assertTrue(third.children.isEmpty())
+    }
+
+    @Test
+    fun sortsRootsByDurationThenName() {
+        val busy = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T10:00", categoryId = 4L, path = "生活"),
+            event(2, "2026-11-01T10:00", "2026-11-01T11:00", categoryId = 1L, path = "工作"),
+        )
+        assertEquals(listOf(4L, 1L), busy.roots.map { it.categoryId })
+
+        val tied = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T09:00", categoryId = 1L, path = "工作"),
+            event(2, "2026-11-01T09:00", "2026-11-01T10:00", categoryId = 4L, path = "生活"),
+        )
+        assertEquals(listOf("工作", "生活"), tied.roots.map { it.name })
+    }
+
+    @Test
+    fun synthesizesUnknownCategoryAsLastRoot() {
+        val summary = build(
+            event(1, "2026-11-01T07:00", "2026-11-01T10:00", categoryId = 99L, path = "阅读 / 文学", color = 0xFFFF0000L),
+            event(2, "2026-11-01T10:00", "2026-11-01T12:00", categoryId = 1L, path = "工作"),
+        )
+        assertEquals(2, summary.roots.size)
+        assertEquals(1L, summary.roots[0].categoryId)
+        val orphan = summary.roots[1]
+        assertEquals(StatsBuilder.ORPHAN_CATEGORY_ID, orphan.categoryId)
+        assertEquals("阅读", orphan.name)
+        assertEquals(3 * HOUR, orphan.millis)
+        assertEquals(1, orphan.eventCount)
+        assertEquals(0xFFFF0000L, orphan.colorHex)
+        assertEquals(0, orphan.depth)
+    }
+
+    @Test
+    fun mergesUnknownCategoriesWithSameRootName() {
+        val summary = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T08:30", categoryId = 98L, path = "阅读 / A", color = 0xFF112233L),
+            event(2, "2026-11-01T08:30", "2026-11-01T09:15", categoryId = 99L, path = "阅读 / B", color = 0xFF445566L),
+        )
+        val orphan = summary.roots.single()
+        assertEquals("阅读", orphan.name)
+        assertEquals(75 * MINUTE, orphan.millis)
+        assertEquals(2, orphan.eventCount)
+        assertEquals(0xFF112233L, orphan.colorHex)
+    }
+
+    @Test
+    fun blankCategoryPathFallsBackToUnknownName() {
+        val summary = build(event(1, "2026-11-01T08:00", "2026-11-01T09:00", categoryId = 99L, path = ""))
+        assertEquals("未分类", summary.roots.single().name)
+    }
+
+    // ---------- 环比 ----------
+
+    @Test
+    fun previousWindowAlignsElapsedTime() {
+        val summary = build(
+            event(1, "2026-11-01T10:00", "2026-11-01T11:00"),
+            event(2, "2026-10-31T03:00", "2026-10-31T04:00"),
+            // now = 12:00，上一窗口只对齐到 10-31 12:00，下面这条不进入环比。
+            event(3, "2026-10-31T18:00", "2026-10-31T19:00"),
+        )
+        assertEquals(HOUR, summary.totalMillis)
+        assertEquals(HOUR, summary.previousTotalMillis)
+        assertEquals(HOUR, summary.roots.single().previousMillis)
+    }
+
+    @Test
+    fun previousWindowUsesFullPeriodWhenWindowIsInPast() {
+        val window = StatsWindows.of(StatsMode.DAY, LocalDate.of(2026, 10, 25), zone)
+        val summary = build(
+            event(1, "2026-10-25T09:00", "2026-10-25T10:00"),
+            event(2, "2026-10-24T20:00", "2026-10-24T21:00"),
+            window = window,
+        )
+        assertEquals(HOUR, summary.roots.single().previousMillis)
+        assertEquals(HOUR, summary.previousTotalMillis)
+    }
+
+    @Test
+    fun previousMillisIsZeroForNewCategory() {
+        val summary = build(event(1, "2026-11-01T10:00", "2026-11-01T11:00"))
+        assertEquals(0L, summary.roots.single().previousMillis)
+        assertEquals(0L, summary.previousTotalMillis)
+        assertNull(summary.roots.single().deltaRatio)
+    }
+
+    @Test
+    fun deltaRatioReflectsChange() {
+        val increase = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T10:00"),
+            event(2, "2026-10-31T03:00", "2026-10-31T04:00"),
+        )
+        assertEquals(1f, increase.roots.single().deltaRatio!!, 0.0001f)
+
+        val decrease = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T09:00"),
+            event(2, "2026-10-31T03:00", "2026-10-31T05:00"),
+        )
+        assertEquals(-0.5f, decrease.roots.single().deltaRatio!!, 0.0001f)
+    }
+
+    // ---------- 范围文案 ----------
+
+    @Test
+    fun dayLabelPrefixesTodayAndAddsYearWhenNeeded() {
         assertEquals(
-            listOf(
-                "2026-10-26",
-                "2026-10-27",
-                "2026-10-28",
-                "2026-10-29",
-                "2026-10-30",
-                "2026-10-31",
-                "2026-11-01",
-            ),
-            summary.last7Days.map { it.date.toString() },
+            "今天 · 11月1日 周日",
+            statsLabel(StatsWindows.of(StatsMode.DAY, today, zone), nowMillis, zone),
         )
-        assertEquals(hour, dayMillis(summary, "2026-10-26"))
-        assertEquals(0L, dayMillis(summary, "2026-10-27"))
-        assertEquals(0L, dayMillis(summary, "2026-10-31"))
-        assertEquals(hour, dayMillis(summary, "2026-11-01"))
+        assertEquals(
+            "10月31日 周六",
+            statsLabel(StatsWindows.of(StatsMode.DAY, LocalDate.of(2026, 10, 31), zone), nowMillis, zone),
+        )
+        assertEquals(
+            "2025年11月1日 周六",
+            statsLabel(StatsWindows.of(StatsMode.DAY, LocalDate.of(2025, 11, 1), zone), nowMillis, zone),
+        )
     }
 
     @Test
-    fun last7DaysSplitsEventAtMidnight() {
-        val summary = build(
-            event(1, "2026-10-31T23:30", "2026-11-01T00:30"),
-            period = StatsPeriod.TODAY,
+    fun weekLabelUsesEnDashAndAddsYearsAcrossNewYear() {
+        assertEquals(
+            "10月26日 – 11月1日",
+            statsLabel(StatsWindows.of(StatsMode.WEEK, today, zone), nowMillis, zone),
         )
-
-        assertEquals(30 * minute, dayMillis(summary, "2026-10-31"))
-        assertEquals(30 * minute, dayMillis(summary, "2026-11-01"))
-        assertEquals(30 * minute, summary.totalMillis)
+        assertEquals(
+            "2025年12月29日 – 2026年1月4日",
+            statsLabel(StatsWindows.of(StatsMode.WEEK, LocalDate.of(2026, 1, 1), zone), nowMillis, zone),
+        )
     }
 
     @Test
-    fun last7DaysIgnoresEventsBeforeTheWindow() {
-        val summary = build(
-            event(1, "2026-10-20T09:00", "2026-10-20T10:00"),
-            period = StatsPeriod.ALL,
+    fun monthAndYearLabels() {
+        assertEquals(
+            "2026年11月",
+            statsLabel(StatsWindows.of(StatsMode.MONTH, today, zone), nowMillis, zone),
         )
-
-        assertTrue(summary.last7Days.all { it.millis == 0L })
-        assertEquals(hour, summary.totalMillis)
+        assertEquals(
+            "2026年",
+            statsLabel(StatsWindows.of(StatsMode.YEAR, today, zone), nowMillis, zone),
+        )
     }
 
     @Test
-    fun last7DaysIsIndependentOfSelectedPeriod() {
-        val summary = build(
-            event(1, "2026-10-31T09:00", "2026-10-31T10:00"),
-            period = StatsPeriod.TODAY,
+    fun customRangeLabelAddsYearsAcrossNewYear() {
+        assertEquals(
+            "10月1日 – 10月15日",
+            statsLabel(StatsWindows.custom(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 15), zone), nowMillis, zone),
         )
-
-        assertEquals(0L, summary.totalMillis)
-        assertEquals(hour, dayMillis(summary, "2026-10-31"))
+        assertEquals(
+            "2025年12月30日 – 2026年1月2日",
+            statsLabel(StatsWindows.custom(LocalDate.of(2025, 12, 30), LocalDate.of(2026, 1, 2), zone), nowMillis, zone),
+        )
     }
 
-    @Test
-    fun cliplessRangeStaysEmptyWhenAllEventsAreInTheFuture() {
-        val summary = build(
-            event(1, "2026-11-02T09:00", "2026-11-02T10:00"),
-            period = StatsPeriod.ALL,
-        )
+    // ---------- 夹具 ----------
 
-        assertEquals(0L, summary.totalMillis)
-        assertEquals(0, summary.eventCount)
-        assertTrue(summary.categories.isEmpty())
-    }
-
-    private fun build(vararg events: TimelineEvent, period: StatsPeriod): StatsSummary =
-        StatsBuilder.build(events.toList(), period, now, zone)
-
-    private fun build(event: TimelineEvent, period: StatsPeriod): StatsSummary =
-        StatsBuilder.build(listOf(event), period, now, zone)
-
-    private fun dayMillis(summary: StatsSummary, date: String): Long =
-        summary.last7Days.single { it.date == LocalDate.parse(date) }.millis
+    private fun at(value: String): Long =
+        LocalDateTime.parse(value).atZone(zone).toInstant().toEpochMilli()
 
     private fun event(
         id: Long,
         start: String,
         end: String,
-        path: String = "工作 / 执行",
-        color: Long = 0xFF4C7BE8,
-    ): TimelineEvent = TimelineEvent(
-        event = Event(
-            id = id,
-            note = null,
-            startAt = at(start),
-            endAt = at(end),
-            categoryId = 1L,
-            createdAt = 0L,
-            updatedAt = 0L,
+        categoryId: Long = 1L,
+        path: String = "工作",
+        color: Long = WORK_COLOR,
+    ): TimelineEvent {
+        val startAt = at(start)
+        return TimelineEvent(
+            event = Event(
+                id = id,
+                note = null,
+                startAt = startAt,
+                endAt = at(end),
+                categoryId = categoryId,
+                createdAt = startAt,
+                updatedAt = startAt,
+            ),
+            categoryPath = path,
+            categoryColor = color,
+        )
+    }
+
+    private fun build(
+        vararg events: TimelineEvent,
+        window: StatsWindow = StatsWindows.of(StatsMode.DAY, today, zone),
+        now: Long = nowMillis,
+        tree: CategoryTree = tree(),
+    ): StatsSummary = StatsBuilder.build(events.toList(), tree, window, now, zone)
+
+    /** 工作(1) / 执行(2) / 编码(3) / 深潜(6)，生活(4) / 运动(5)。 */
+    private fun tree(): CategoryTree = buildCategoryTree(
+        listOf(
+            category(1L, "工作", null, WORK_COLOR),
+            category(2L, "执行", 1L, 0xFF4C7BE8),
+            category(3L, "编码", 2L, 0xFF2F6FE4),
+            category(6L, "深潜", 3L, 0xFF3F51B5),
+            category(4L, "生活", null, 0xFF8B5CF6),
+            category(5L, "运动", 4L, 0xFF8B5CF6),
         ),
-        categoryPath = path,
-        categoryColor = color,
     )
 
-    private fun at(local: String): Long =
-        LocalDateTime.parse(local).atZone(zone).toInstant().toEpochMilli()
+    private fun category(id: Long, name: String, parentId: Long?, colorHex: Long): Category =
+        Category(
+            id = id,
+            name = name,
+            parentId = parentId,
+            sortOrder = id.toInt(),
+            colorHex = colorHex,
+        )
+
+    private companion object {
+        private const val MINUTE = 60_000L
+        private const val HOUR = 60 * MINUTE
+        private const val WORK_COLOR = 0xFF4C7BE8L
+    }
 }

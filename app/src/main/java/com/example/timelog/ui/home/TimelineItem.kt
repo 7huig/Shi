@@ -80,10 +80,13 @@ fun TimelineSegmentRow(
             .padding(start = 24.dp, end = 24.dp, top = 6.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Box(modifier = Modifier.width(44.dp).height(height)) {
+        Box(modifier = Modifier.width(48.dp).height(height)) {
             Text(
                 text = DateTimeFormat.time(segment.startAt),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 3.dp),
             )
@@ -116,9 +119,21 @@ fun TimelineSegmentRow(
                 modifier = fillable,
             )
         } else {
+            // 整块可点：打开块内第一条记录；块内单条记录保持各自的可点/长按区，且内层优先消费点击。
+            val firstEventId = segment.events.firstOrNull()?.event?.id
+            val blockClickable = if (firstEventId != null) {
+                blockModifier
+                    .clip(BlockShape)
+                    .combinedClickable(
+                        onClick = { onEventClick(firstEventId) },
+                        onLongClick = { onEventLongClick(firstEventId) },
+                    )
+            } else {
+                blockModifier
+            }
             RecordedBlock(
                 segment = segment,
-                modifier = blockModifier,
+                modifier = blockClickable,
                 onEventClick = onEventClick,
                 onEventLongClick = onEventLongClick,
             )
@@ -174,6 +189,8 @@ private fun RecordedBlock(
                         Text(
                             text = item.categoryPath,
                             style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 18.sp,
                                 fontWeight = FontWeight.Medium,
                             ),
                             color = textColor,
@@ -184,7 +201,10 @@ private fun RecordedBlock(
                     item.event.note?.let { note ->
                         Text(
                             text = note,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -250,14 +270,17 @@ private fun UnrecordedBlock(
                 }
                 Text(
                     text = name,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 13.sp,
+                        lineHeight = 17.sp,
+                    ),
                     color = labelColor,
                 )
             }
             if (height >= 62.dp) {
                 Text(
                     text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -271,9 +294,9 @@ private fun UnrecordedBlock(
 private fun rememberBlockHeight(segment: TimelineSegment): Dp {
     val minutes = ((segment.endAt - segment.startAt).coerceAtLeast(60_000L)) / 60_000f
     return if (segment.isUnrecorded) {
-        (42f + minutes * 0.45f).coerceIn(46f, 112f).dp
+        (46f + minutes * 0.45f).coerceIn(50f, 120f).dp
     } else {
-        val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 26f
-        (54f + minutes * 0.55f + extraRows).coerceIn(58f, 208f).dp
+        val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 28f
+        (58f + minutes * 0.60f + extraRows).coerceIn(62f, 220f).dp
     }
 }

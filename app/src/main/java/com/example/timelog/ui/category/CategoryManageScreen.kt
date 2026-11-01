@@ -6,8 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,11 +46,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.timelog.domain.model.CategoryNode
-import com.example.timelog.domain.model.SolarTermColors
+import com.example.timelog.domain.model.SolarTermSeasons
 import com.example.timelog.ui.home.CategoryDot
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryManageScreen(
     state: CategoryManageUiState,
@@ -166,18 +165,10 @@ fun CategoryManageScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(9.dp),
-                        verticalArrangement = Arrangement.spacedBy(9.dp),
-                    ) {
-                        SolarTermColors.forEach { colorHex ->
-                            ColorSwatch(
-                                colorHex = colorHex,
-                                selected = colorHex == editor.colorHex,
-                                onClick = { onEditorColorChange(colorHex) },
-                            )
-                        }
-                    }
+                    SolarTermPalette(
+                        selectedHex = editor.colorHex,
+                        onSelect = onEditorColorChange,
+                    )
                 }
             },
             confirmButton = {
@@ -283,6 +274,49 @@ private fun CategoryRow(
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+/** 24 节气色板：4 行（春夏秋冬）× 6 列，颜色下方标注节气名。 */
+@Composable
+private fun SolarTermPalette(selectedHex: Long, onSelect: (Long) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SolarTermSeasons.forEach { (season, terms) ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = season,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .width(20.dp)
+                        .padding(top = 7.dp),
+                )
+                terms.forEach { term ->
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        ColorSwatch(
+                            colorHex = term.colorHex,
+                            selected = term.colorHex == selectedHex,
+                            onClick = { onSelect(term.colorHex) },
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = term.name,
+                            fontSize = 9.sp,
+                            lineHeight = 11.sp,
+                            maxLines = 1,
+                            color = if (term.colorHex == selectedHex) {
+                                MaterialTheme.colorScheme.onBackground
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
             }
         }
     }
