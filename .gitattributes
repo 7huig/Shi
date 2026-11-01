@@ -1,0 +1,16 @@
+# 统一换行符，避免 Windows/Linux 协作时的 CRLF 噪音
+* text=auto eol=lf
+
+# Windows 脚本保持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不做文本转换
+*.jar binary
+*.apk binary
+*.aab binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.jks binary
+*.keystore binary
