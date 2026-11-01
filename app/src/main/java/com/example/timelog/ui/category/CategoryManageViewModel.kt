@@ -9,6 +9,7 @@ import com.example.timelog.data.repository.CategoryDeletionResult
 import com.example.timelog.data.repository.TimeLogRepository
 import com.example.timelog.domain.model.CategoryNode
 import com.example.timelog.domain.model.CategoryTree
+import com.example.timelog.domain.model.SolarTermColors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -77,7 +78,7 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
                     parentId = parent?.category?.id,
                     parentName = parent?.category?.name,
                     name = "",
-                    colorHex = DEFAULT_COLORS.random(),
+                    colorHex = SolarTermColors.random(),
                 ),
             )
         }
@@ -149,12 +150,12 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         viewModelScope.launch {
             val message = when (val outcome = repository.deleteCategory(pending.node.category.id)) {
                 is CategoryDeletionResult.Deleted -> {
-                    val moved = if (outcome.reassignedEventCount > 0) {
-                        "，${outcome.reassignedEventCount} 条事件移到「未分类」"
+                    val deleted = if (outcome.deletedEventCount > 0) {
+                        "，${outcome.deletedEventCount} 条事件"
                     } else {
                         ""
                     }
-                    "已删除 ${outcome.categoryCount} 个分类$moved"
+                    "已删除 ${outcome.categoryCount} 个分类$deleted"
                 }
 
                 CategoryDeletionResult.NotFound -> "分类已不存在"
@@ -170,14 +171,6 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
 
     companion object {
         private const val MAX_DEPTH = 2
-        private val DEFAULT_COLORS = listOf(
-            0xFF3D6BDB,
-            0xFF2F8F5B,
-            0xFFC07A2B,
-            0xFF8A63C9,
-            0xFFB4654A,
-            0xFF2F7E8F,
-        )
 
         fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
             initializer { CategoryManageViewModel(repository) }

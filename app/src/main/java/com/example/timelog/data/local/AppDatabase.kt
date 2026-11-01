@@ -14,7 +14,7 @@ import com.example.timelog.data.seed.DefaultCategories
 
 @Database(
     entities = [CategoryEntity::class, EventEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "time-log.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .addCallback(SeedCallback())
                 .build()
 
@@ -92,6 +92,33 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "UPDATE category SET sortOrder = 0 WHERE id = 42 AND name = '沉浸'",
+                )
+            }
+        }
+
+        /**
+         * v4 换成 24 节气色板：只改仍是旧默认色的种子分类，用户自己挑过的颜色保持不动。
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                recolor(db, 1, 0xFF3D6BDB, 0xFF5A7FA8)
+                recolor(db, 11, 0xFF4C7BE8, 0xFF3F5B78)
+                recolor(db, 12, 0xFF2F5DAF, 0xFF8A9AB8)
+                recolor(db, 2, 0xFF8A63C9, 0xFF9E86B8)
+                recolor(db, 21, 0xFF9C79D6, 0xFF8B72A6)
+                recolor(db, 22, 0xFF7150A8, 0xFF8A86A8)
+                recolor(db, 3, 0xFFC07A2B, 0xFFC9A24E)
+                recolor(db, 31, 0xFFD99445, 0xFFB8933F)
+                recolor(db, 32, 0xFF9E6220, 0xFFA98A5A)
+                recolor(db, 4, 0xFFB4654A, 0xFF94594A)
+                recolor(db, 41, 0xFFCC7C5E, 0xFFC46E4A)
+                recolor(db, 42, 0xFF8E4A35, 0xFFA8463A)
+            }
+
+            private fun recolor(db: SupportSQLiteDatabase, id: Long, oldColor: Long, newColor: Long) {
+                db.execSQL(
+                    "UPDATE category SET colorHex = ? WHERE id = ? AND colorHex = ?",
+                    arrayOf<Any?>(newColor, id, oldColor),
                 )
             }
         }

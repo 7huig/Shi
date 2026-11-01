@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.timelog.data.repository.TimeLogRepository
+import com.example.timelog.domain.OverlapPlan
 import com.example.timelog.domain.model.CategoryTree
+import com.example.timelog.domain.model.Event
+import com.example.timelog.domain.resolveOverlap
 import com.example.timelog.ui.home.EditorTarget
 import com.example.timelog.util.DateTimeFormat
 import java.time.LocalDate
@@ -32,6 +35,8 @@ data class RecordUiState(
     val timeError: Boolean = false,
     val isSaving: Boolean = false,
     val saved: Boolean = false,
+    /** 会被目标区间整段盖住、需要用户确认的已有记录；非空时由 RecordSheet 弹确认框。 */
+    val pendingOverwrite: List<Event> = emptyList(),
 )
 
 class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
@@ -40,6 +45,9 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
     val uiState: StateFlow<RecordUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
+
+    /** 等用户确认「仍要保存」的落库参数；确认后按同一份 [OverlapPlan] 真正写入。 */
+    private var pendingSave: PendingSave? = null
 
     init {
         viewModelScope.launch {
@@ -55,7 +63,15 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
     fun start(target: EditorTarget) {
         loadJob?.cancel()
-        _uiState.update { it.copy(isSaving = false, saved = false, timeError = false) }
+        pendingSave = null
+        _uiState.update {
+            it.copy(
+                isSaving = false,
+                saved = false,
+                timeError = false,
+                pendingOverwrite = emptyList(),
+            )
+        }
         when (target) {
             is EditorTarget.New -> startNew(target)
             is EditorTarget.Edit -> startEdit(target.eventId)
@@ -186,9 +202,14 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
         }
     }
 
+    /**
+     * 保存：先查重叠并算出让路方案。
+     * - 只有单侧裁剪 / 拆分（updates / clones）时静默生效；
+     * - 有整段被盖住的记录（victims）时先挂起，等用户在确认框里点「仍要保存」再落库。
+     */
     fun save() {
         val state = _uiState.value
-        if (state.isSaving) return
+        if (state.isSaving || pendingSave != null) return
         val categoryId = state.selectedCategoryId ?: return
         val startAt = DateTimeFormat.toEpochMillis(state.startDate, state.startTime)
         val endAt = DateTimeFormat.toEpochMillis(state.endDate, state.endTime)
@@ -199,23 +220,80 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
         _uiState.update { it.copy(isSaving = true, timeError = false) }
         viewModelScope.launch {
             runCatching {
-                repository.saveEvent(
-                    id = state.eventId,
-                    note = state.note,
-                    startAt = startAt,
-                    endAt = endAt,
-                    categoryId = categoryId,
+                // 契约：getOverlappingEvents(startAt, endAt, excludeId)
+                val others = repository.getOverlappingEvents(
+                    startAt,
+                    endAt,
+                    state.eventId ?: -1L,
                 )
-            }.onSuccess {
-                _uiState.update { it.copy(isSaving = false, saved = true) }
+                val plan = resolveOverlap(startAt, endAt, others)
+                if (plan.victims.isNotEmpty()) {
+                    pendingSave = PendingSave(
+                        id = state.eventId,
+                        note = state.note,
+                        startAt = startAt,
+                        endAt = endAt,
+                        categoryId = categoryId,
+                        plan = plan,
+                    )
+                    _uiState.update {
+                        it.copy(isSaving = false, pendingOverwrite = plan.victims)
+                    }
+                } else {
+                    // 契约：saveEventResolved(id, note, startAt, endAt, categoryId, plan)
+                    repository.saveEventResolved(
+                        state.eventId,
+                        state.note,
+                        startAt,
+                        endAt,
+                        categoryId,
+                        plan,
+                    )
+                    _uiState.update { it.copy(isSaving = false, saved = true) }
+                }
             }.onFailure {
-                _uiState.update { it.copy(isSaving = false) }
+                pendingSave = null
+                _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
             }
         }
     }
 
+    /** 重叠确认框里点「仍要保存」：按挂起时的方案真正写入，victims 会被删除。 */
+    fun confirmOverwrite() {
+        val pending = pendingSave ?: return
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true) }
+        viewModelScope.launch {
+            runCatching {
+                repository.saveEventResolved(
+                    pending.id,
+                    pending.note,
+                    pending.startAt,
+                    pending.endAt,
+                    pending.categoryId,
+                    pending.plan,
+                )
+            }.onSuccess {
+                pendingSave = null
+                _uiState.update {
+                    it.copy(isSaving = false, saved = true, pendingOverwrite = emptyList())
+                }
+            }.onFailure {
+                pendingSave = null
+                _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
+            }
+        }
+    }
+
+    /** 重叠确认框里点「取消」：放弃这次保存，回到编辑状态。 */
+    fun dismissOverwrite() {
+        pendingSave = null
+        _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
+    }
+
     fun reset() {
         loadJob?.cancel()
+        pendingSave = null
         _uiState.update { current ->
             RecordUiState(
                 tree = current.tree,
@@ -230,6 +308,15 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
             ?.first?.category?.id
             ?: tree.roots.firstOrNull()?.category?.id
     }
+
+    private data class PendingSave(
+        val id: Long?,
+        val note: String?,
+        val startAt: Long,
+        val endAt: Long,
+        val categoryId: Long,
+        val plan: OverlapPlan,
+    )
 
     companion object {
         fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {

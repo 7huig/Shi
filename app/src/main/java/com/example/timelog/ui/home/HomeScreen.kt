@@ -25,7 +25,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,33 +41,31 @@ import androidx.compose.ui.unit.dp
 import com.example.timelog.ui.theme.Clay
 import com.example.timelog.util.DateTimeFormat
 
+/**
+ * 时间轴页：不再自带 Scaffold / 顶栏 / 底栏，外壳（MainActivity）统一提供页签与「完成」按钮，
+ * 这样时间轴与统计页可以放在同一个 HorizontalPager 里左右滑动切换。
+ */
 @Composable
-fun HomeScreen(
+fun TimelinePage(
     state: HomeUiState,
-    onNewRecord: () -> Unit,
-    onOpenCategories: () -> Unit,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
     onFillGap: (Long, Long) -> Unit,
     onDismissDelete: () -> Unit,
     onConfirmDelete: () -> Unit,
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = { HomeHeader(onOpenCategories = onOpenCategories) },
-        bottomBar = { RecordBar(onNewRecord = onNewRecord) },
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            when {
-                state.isLoading -> Unit
-                state.days.isEmpty() -> EmptyTimeline()
-                else -> TimelineList(
-                    days = state.days,
-                    onEventClick = onEventClick,
-                    onEventLongClick = onEventLongClick,
-                    onFillGap = onFillGap,
-                )
-            }
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            state.isLoading -> Unit
+            state.days.isEmpty() -> EmptyTimeline()
+            else -> TimelineList(
+                days = state.days,
+                uncategorizedName = state.uncategorized?.name ?: "未分类",
+                uncategorizedColor = state.uncategorized?.colorHex,
+                onEventClick = onEventClick,
+                onEventLongClick = onEventLongClick,
+                onFillGap = onFillGap,
+            )
         }
     }
 
@@ -105,32 +102,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader(onOpenCategories: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "時計",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onOpenCategories) {
-            Text("分类", color = MaterialTheme.colorScheme.primary)
-        }
-    }
-}
-
-@Composable
-private fun RecordBar(onNewRecord: () -> Unit) {
+fun RecordBar(onNewRecord: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 14.dp),
     ) {
         Button(
             onClick = onNewRecord,
@@ -171,6 +148,8 @@ private fun EmptyTimeline() {
 @Composable
 private fun TimelineList(
     days: List<HomeDay>,
+    uncategorizedName: String,
+    uncategorizedColor: Long?,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
     onFillGap: (Long, Long) -> Unit,
@@ -197,7 +176,8 @@ private fun TimelineList(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(top = 10.dp, bottom = 16.dp),
+        // 底部留白很小：「现在」横线尽量贴近下方的「完成」按钮。
+        contentPadding = PaddingValues(top = 10.dp, bottom = 2.dp),
     ) {
         days.forEach { day ->
             item(key = "day-${day.date}") {
@@ -210,11 +190,12 @@ private fun TimelineList(
                         segment.events.joinToString(",") { it.event.id.toString() }
                 },
             ) { segment ->
-                val single = segment.events.singleOrNull()
                 TimelineSegmentRow(
                     segment = segment,
-                    onClick = single?.let { event -> { onEventClick(event.event.id) } },
-                    onLongClick = single?.let { event -> { onEventLongClick(event.event.id) } },
+                    uncategorizedName = uncategorizedName,
+                    uncategorizedColor = uncategorizedColor,
+                    onEventClick = onEventClick,
+                    onEventLongClick = onEventLongClick,
                     onFillGap = { onFillGap(segment.startAt, segment.endAt) },
                 )
             }

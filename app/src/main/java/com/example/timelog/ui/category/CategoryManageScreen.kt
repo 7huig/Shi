@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,19 +49,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.timelog.domain.model.CategoryNode
+import com.example.timelog.domain.model.SolarTermColors
 import com.example.timelog.ui.home.CategoryDot
 
-private val EditorColors = listOf(
-    0xFF3D6BDB,
-    0xFF2F8F5B,
-    0xFFC07A2B,
-    0xFF8A63C9,
-    0xFFB4654A,
-    0xFF2F7E8F,
-    0xFF8C928C,
-)
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CategoryManageScreen(
     state: CategoryManageUiState,
@@ -122,7 +115,7 @@ fun CategoryManageScreen(
         ) {
             item(key = "hint") {
                 Text(
-                    text = "分类最多 3 层。删除分类时，其中的事件会移到「未分类」。",
+                    text = "分类最多 3 层。删除分类时，其中的事件会一并删除。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 8.dp),
@@ -173,8 +166,11 @@ fun CategoryManageScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        EditorColors.forEach { colorHex ->
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        SolarTermColors.forEach { colorHex ->
                             ColorSwatch(
                                 colorHex = colorHex,
                                 selected = colorHex == editor.colorHex,
@@ -209,7 +205,7 @@ fun CategoryManageScreen(
                     buildString {
                         append("「${pending.node.category.name}」及其子分类会被删除。")
                         if (pending.eventCount > 0) {
-                            append("${pending.eventCount} 条事件会移动到「未分类」，不会丢失。")
+                            append("其中 ${pending.eventCount} 条事件会一并删除。")
                         }
                         append("此操作无法撤销。")
                     },
@@ -260,13 +256,6 @@ private fun CategoryRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (node.children.isNotEmpty()) {
-                Text(
-                    text = "${node.children.size} 个子分类",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
         if (node.category.isSystem) {
             Text(
@@ -303,7 +292,7 @@ private fun CategoryRow(
 private fun ColorSwatch(colorHex: Long, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(30.dp)
+            .size(28.dp)
             .clip(CircleShape)
             .background(Color(colorHex), CircleShape)
             .border(

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.timelog.data.repository.TimeLogRepository
+import com.example.timelog.domain.model.Category
 import com.example.timelog.domain.model.TimelineBuilder
 import com.example.timelog.domain.model.TimelineEvent
 import com.example.timelog.domain.model.TimelineSegment
@@ -32,6 +33,8 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val days: List<HomeDay> = emptyList(),
     val events: List<TimelineEvent> = emptyList(),
+    /** 系统分类「未分类」：未记录的空隙和归入系统分类的事件共用同一个名字与颜色。 */
+    val uncategorized: Category? = null,
     val editor: EditorTarget? = null,
     val pendingDelete: TimelineEvent? = null,
 )
@@ -61,9 +64,10 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
     val uiState: StateFlow<HomeUiState> = combine(
         repository.timeline,
+        repository.categoryTree,
         clock,
         transient,
-    ) { events, now, local ->
+    ) { events, tree, now, local ->
         val today = DateTimeFormat.toLocalDateTime(now).toLocalDate()
         val days = TimelineBuilder.build(
             events = events,
@@ -83,6 +87,7 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
             isLoading = false,
             days = days,
             events = events,
+            uncategorized = tree.flatten().firstOrNull { it.first.category.isSystem }?.first?.category,
             editor = local.editor,
             pendingDelete = events.firstOrNull { it.event.id == local.pendingDeleteId },
         )

@@ -25,7 +25,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -41,6 +40,7 @@ import com.example.timelog.domain.model.TimelineSegment
 import com.example.timelog.util.DateTimeFormat
 
 private val BlockShape = RoundedCornerShape(14.dp)
+private val EventShape = RoundedCornerShape(8.dp)
 
 @Composable
 fun CategoryDot(
@@ -59,13 +59,17 @@ fun CategoryDot(
 /**
  * 时间流里的一行：左侧只在块与块的交接处显示时间，右侧是块本体。
  * 未记录的时间由虚线「未分类」块占位。
+ *
+ * 合并块里每条记录各自可点：重叠记录以前整块不可点，导致无法编辑，这里按事件拆开点击区域。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TimelineSegmentRow(
     segment: TimelineSegment,
-    onClick: (() -> Unit)?,
-    onLongClick: (() -> Unit)?,
+    uncategorizedName: String = "未分类",
+    uncategorizedColor: Long? = null,
+    onEventClick: (Long) -> Unit = {},
+    onEventLongClick: (Long) -> Unit = {},
     onFillGap: (() -> Unit)? = null,
 ) {
     val height = rememberBlockHeight(segment)
@@ -105,23 +109,30 @@ fun TimelineSegmentRow(
             } else {
                 blockModifier
             }
-            UnrecordedBlock(segment = segment, modifier = fillable)
+            UnrecordedBlock(
+                segment = segment,
+                name = uncategorizedName,
+                colorHex = uncategorizedColor,
+                modifier = fillable,
+            )
         } else {
-            val clickable = if (onClick != null || onLongClick != null) {
-                blockModifier.combinedClickable(
-                    onClick = { onClick?.invoke() },
-                    onLongClick = { onLongClick?.invoke() },
-                )
-            } else {
-                blockModifier
-            }
-            RecordedBlock(segment = segment, modifier = clickable)
+            RecordedBlock(
+                segment = segment,
+                modifier = blockModifier,
+                onEventClick = onEventClick,
+                onEventLongClick = onEventLongClick,
+            )
         }
     }
 }
 
 @Composable
-private fun RecordedBlock(segment: TimelineSegment, modifier: Modifier) {
+private fun RecordedBlock(
+    segment: TimelineSegment,
+    modifier: Modifier,
+    onEventClick: (Long) -> Unit,
+    onEventLongClick: (Long) -> Unit,
+) {
     val accent = Color(segment.events.first().categoryColor)
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val textColor = if (darkTheme) lerp(accent, Color.White, 0.35f) else accent
@@ -141,34 +152,45 @@ private fun RecordedBlock(segment: TimelineSegment, modifier: Modifier) {
                 .background(accent.copy(alpha = if (darkTheme) 0.85f else 0.7f)),
         )
         Column(
-            modifier = Modifier.padding(start = 13.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = 13.dp, top = 6.dp, end = 8.dp, bottom = 6.dp),
         ) {
             segment.events.forEachIndexed { index, item ->
                 if (index > 0) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(2.dp))
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CategoryDot(colorHex = item.categoryColor, size = 6.dp)
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = item.categoryPath,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        color = textColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                item.event.note?.let { note ->
-                    Text(
-                        text = note,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 12.dp, top = 3.dp),
-                    )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(EventShape)
+                        .combinedClickable(
+                            onClick = { onEventClick(item.event.id) },
+                            onLongClick = { onEventLongClick(item.event.id) },
+                        )
+                        .padding(horizontal = 2.dp, vertical = 2.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CategoryDot(colorHex = item.categoryColor, size = 6.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = item.categoryPath,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Medium,
+                            ),
+                            color = textColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    item.event.note?.let { note ->
+                        Text(
+                            text = note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 12.dp, top = 2.dp),
+                        )
+                    }
                 }
             }
         }
@@ -176,9 +198,15 @@ private fun RecordedBlock(segment: TimelineSegment, modifier: Modifier) {
 }
 
 @Composable
-private fun UnrecordedBlock(segment: TimelineSegment, modifier: Modifier) {
+private fun UnrecordedBlock(
+    segment: TimelineSegment,
+    name: String,
+    colorHex: Long?,
+    modifier: Modifier,
+) {
     val outline = MaterialTheme.colorScheme.outlineVariant
     val height = rememberBlockHeight(segment)
+    val labelColor = colorHex?.let { Color(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier = modifier
             .background(
@@ -215,11 +243,17 @@ private fun UnrecordedBlock(segment: TimelineSegment, modifier: Modifier) {
         contentAlignment = Alignment.TopStart,
     ) {
         Column {
-            Text(
-                text = "未分类",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (colorHex != null) {
+                    CategoryDot(colorHex = colorHex, size = 6.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = labelColor,
+                )
+            }
             if (height >= 62.dp) {
                 Text(
                     text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
@@ -239,7 +273,7 @@ private fun rememberBlockHeight(segment: TimelineSegment): Dp {
     return if (segment.isUnrecorded) {
         (42f + minutes * 0.45f).coerceIn(46f, 112f).dp
     } else {
-        val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 30f
+        val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 26f
         (54f + minutes * 0.55f + extraRows).coerceIn(58f, 208f).dp
     }
 }

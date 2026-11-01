@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.timelog.domain.model.Event
 import com.example.timelog.util.DateTimeFormat
 import java.time.LocalDate
 import java.time.LocalTime
@@ -63,6 +65,8 @@ fun RecordSheet(
     onEndDateSelected: (LocalDate) -> Unit,
     onEndTimeSelected: (LocalTime) -> Unit,
     onSave: () -> Unit,
+    onConfirmOverwrite: () -> Unit,
+    onCancelOverwrite: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var picker by remember { mutableStateOf<PickerTarget?>(null) }
@@ -163,6 +167,16 @@ fun RecordSheet(
                 }
             }
         }
+    }
+
+    // 保存时如果会整段盖掉已有记录，先让用户确认；单侧裁剪 / 拆分不需要打扰。
+    if (state.pendingOverwrite.isNotEmpty()) {
+        OverlapConfirmDialog(
+            victims = state.pendingOverwrite,
+            isSaving = state.isSaving,
+            onConfirm = onConfirmOverwrite,
+            onDismiss = onCancelOverwrite,
+        )
     }
 
     when (picker) {
@@ -333,4 +347,46 @@ private fun TimePickerDialog(
             }
         }
     }
+}
+
+/** 保存会整段覆盖已有记录时的确认框：逐条列出会被删掉的记录。 */
+@Composable
+private fun OverlapConfirmDialog(
+    victims: List<Event>,
+    isSaving: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("时间重叠") },
+        text = {
+            Column {
+                Text("保存之后，下面这些记录会被整段覆盖并删除：")
+                victims.forEach { victim ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = DateTimeFormat.rangeText(victim.startAt, victim.endAt),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    victim.note?.let { note ->
+                        Text(
+                            text = note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !isSaving) {
+                Text("仍要保存", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) { Text("取消") }
+        },
+    )
 }
