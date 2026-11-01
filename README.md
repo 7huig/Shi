@@ -152,6 +152,7 @@ feat(record): add bottom-sheet event editor
 feat(category): add tree management and safe deletion
 feat(app): wire screens, navigation and edge-to-edge
 docs: add project guide and screenshots
+docs: add complete source bundle
 ```
 
 ## 已知限制
