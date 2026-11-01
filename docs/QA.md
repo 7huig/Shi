@@ -28,7 +28,7 @@
 
 ### 数据存在哪？卸载会丢吗？
 
-全部数据在应用私有的 Room / SQLite 数据库 `time-log.db`（Android 的 `/data/data/com.example.timelog/databases/`）里。没有云端、没有账号，**卸载应用或清除数据会一并删除**；换机、刷机前请先在统计页底部的「数据」卡片导出 JSON。
+全部数据在应用私有的 Room / SQLite 数据库 `time-log.db`（Android 的 `/data/data/io.github.huig7.shi/databases/`）里。没有云端、没有账号，**卸载应用或清除数据会一并删除**；换机、刷机前请先在统计页底部的「数据」卡片导出 JSON。
 
 ### 真的不联网吗？
 
@@ -38,9 +38,9 @@
 
 这是一个自用为主的项目，targetSdk 31 在 Android 10–16 上都能正常侧载安装和运行。若要上架 Google Play，需要按商店政策升级到 API 36 并重新验证行为变更；欢迎提 PR。
 
-### 包名为什么是 `com.example.timelog`？
+### 包名为什么是 `io.github.huig7.shi`？
 
-历史原因。开源与侧载不受影响；如果要在 Google Play 或 F-Droid 发布，建议改成自己的域名反写（例如 `io.github.7huig.shi` 这类），这需要同步改 `namespace`、`applicationId` 与源码目录，属于破坏性变更。
+采用开源项目常见的反向域名写法（`io.github.huig7.shi`），不再使用 `com.example` 这类占位前缀。因为 Java 包名的每一段不能以数字开头，用户名 `7huig` 不能直接作为包名段，所以写成 `huig7`。如果 fork 后要改成自己的包名，需要同步改 `namespace`、`applicationId` 与源码目录，属于破坏性变更：已安装应用的数据不会迁移，相当于一个新应用。
 
 ### release 包为什么比 debug 小这么多？
 

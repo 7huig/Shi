@@ -15,12 +15,12 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.example.timelog"
+    namespace = "io.github.huig7.shi"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
-        applicationId = "com.example.timelog"
+        applicationId = "io.github.huig7.shi"
         minSdk = 29
         targetSdk = 31
         versionCode = 6

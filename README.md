@@ -4,6 +4,8 @@
 
 **纯本地 · 无账号 · 不联网 · 无广告。** 分类与记录只存在手机本地的 SQLite 里，随时可以导出成 JSON 备份。
 
+> 感谢 **DeepSeek-V4.1-Flash** 与 **DeepSeek Harness** 在开发过程中提供的帮助。
+
 [![Android CI](https://github.com/7huig/Shi/actions/workflows/android.yml/badge.svg)](https://github.com/7huig/Shi/actions/workflows/android.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![minSdk 29](https://img.shields.io/badge/minSdk-29-brightgreen.svg)](https://developer.android.com/about/versions/android-10)
@@ -85,7 +87,7 @@ cd Shi
 
 # 安装到已连接的设备 / 模拟器（API 29+）
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.example.timelog/.MainActivity
+adb shell am start -n io.github.huig7.shi/.MainActivity
 ```
 
 Windows 下可用 `gradlew.bat`。本项目在 API 31 的 Pixel 6 模拟器（1080×2400）上验证。
@@ -208,4 +210,4 @@ Requires Android 10 (API 29) or newer. Release builds are minified with R8 (~2.9
 
 ## License
 
-[Apache License 2.0](LICENSE) © 2026 7huig
+[Apache License 2.0](LICENSE) © 2026 [7huig](https://github.com/7huig)
