@@ -37,7 +37,8 @@ data class HomeUiState(
 )
 
 sealed interface EditorTarget {
-    data object New : EditorTarget
+    /** 新建；startAt / endAt 非空时表示由「未分类」空隙点进来，直接预填这段时间。 */
+    data class New(val startAt: Long? = null, val endAt: Long? = null) : EditorTarget
     data class Edit(val eventId: Long) : EditorTarget
 }
 
@@ -92,7 +93,12 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
     )
 
     fun openNewRecord() {
-        transient.update { it.copy(editor = EditorTarget.New) }
+        transient.update { it.copy(editor = EditorTarget.New()) }
+    }
+
+    /** 点击未记录的「未分类」空隙：新建记录并预填这段时间。 */
+    fun openFillRecord(startAt: Long, endAt: Long) {
+        transient.update { it.copy(editor = EditorTarget.New(startAt = startAt, endAt = endAt)) }
     }
 
     fun openEditRecord(eventId: Long) {

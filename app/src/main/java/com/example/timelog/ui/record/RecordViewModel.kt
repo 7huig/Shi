@@ -57,12 +57,33 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
         loadJob?.cancel()
         _uiState.update { it.copy(isSaving = false, saved = false, timeError = false) }
         when (target) {
-            EditorTarget.New -> startNew()
+            is EditorTarget.New -> startNew(target)
             is EditorTarget.Edit -> startEdit(target.eventId)
         }
     }
 
-    private fun startNew() {
+    private fun startNew(prefill: EditorTarget.New) {
+        if (prefill.startAt != null && prefill.endAt != null && prefill.endAt > prefill.startAt) {
+            val startLocal = DateTimeFormat.toLocalDateTime(prefill.startAt)
+            val endLocal = DateTimeFormat.toLocalDateTime(prefill.endAt)
+            _uiState.update {
+                it.copy(
+                    isEditing = false,
+                    eventId = null,
+                    note = "",
+                    startDate = startLocal.toLocalDate(),
+                    startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
+                    endDate = endLocal.toLocalDate(),
+                    endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
+                    timeError = false,
+                )
+            }
+            return
+        }
+        startNewNow()
+    }
+
+    private fun startNewNow() {
         val now = LocalDateTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0)
         val fallbackStart = now.minusMinutes(30)
         _uiState.update {

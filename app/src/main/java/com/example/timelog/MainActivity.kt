@@ -74,6 +74,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
             onOpenCategories = { screen = AppScreen.Categories },
             onEventClick = homeViewModel::openEditRecord,
             onEventLongClick = homeViewModel::requestDelete,
+            onFillGap = homeViewModel::openFillRecord,
             onDismissDelete = homeViewModel::dismissDelete,
             onConfirmDelete = homeViewModel::confirmDelete,
         )

@@ -49,6 +49,7 @@ fun HomeScreen(
     onOpenCategories: () -> Unit,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
+    onFillGap: (Long, Long) -> Unit,
     onDismissDelete: () -> Unit,
     onConfirmDelete: () -> Unit,
 ) {
@@ -65,6 +66,7 @@ fun HomeScreen(
                     days = state.days,
                     onEventClick = onEventClick,
                     onEventLongClick = onEventLongClick,
+                    onFillGap = onFillGap,
                 )
             }
         }
@@ -171,6 +173,7 @@ private fun TimelineList(
     days: List<HomeDay>,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
+    onFillGap: (Long, Long) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val itemCount = days.size + days.sumOf { it.segments.size } + days.count { it.isToday }
@@ -212,6 +215,7 @@ private fun TimelineList(
                     segment = segment,
                     onClick = single?.let { event -> { onEventClick(event.event.id) } },
                     onLongClick = single?.let { event -> { onEventLongClick(event.event.id) } },
+                    onFillGap = { onFillGap(segment.startAt, segment.endAt) },
                 )
             }
             if (day.isToday) {

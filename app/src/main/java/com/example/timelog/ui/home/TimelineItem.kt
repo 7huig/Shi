@@ -66,6 +66,7 @@ fun TimelineSegmentRow(
     segment: TimelineSegment,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onFillGap: (() -> Unit)? = null,
 ) {
     val height = rememberBlockHeight(segment)
     val hairline = MaterialTheme.colorScheme.outlineVariant
@@ -98,7 +99,13 @@ fun TimelineSegmentRow(
             .weight(1f)
             .height(height)
         if (segment.isUnrecorded) {
-            UnrecordedBlock(segment = segment, modifier = blockModifier)
+            // 空隙本身就是一段「未分类」时间：点它可以就地补记。
+            val fillable = if (onFillGap != null && segment.endAt - segment.startAt >= 60_000L) {
+                blockModifier.combinedClickable(onClick = { onFillGap() }, onLongClick = {})
+            } else {
+                blockModifier
+            }
+            UnrecordedBlock(segment = segment, modifier = fillable)
         } else {
             val clickable = if (onClick != null || onLongClick != null) {
                 blockModifier.combinedClickable(

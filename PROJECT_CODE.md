@@ -312,6 +312,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
             onOpenCategories = { screen = AppScreen.Categories },
             onEventClick = homeViewModel::openEditRecord,
             onEventLongClick = homeViewModel::requestDelete,
+            onFillGap = homeViewModel::openFillRecord,
             onDismissDelete = homeViewModel::dismissDelete,
             onConfirmDelete = homeViewModel::confirmDelete,
         )
@@ -1654,6 +1655,7 @@ fun HomeScreen(
     onOpenCategories: () -> Unit,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
+    onFillGap: (Long, Long) -> Unit,
     onDismissDelete: () -> Unit,
     onConfirmDelete: () -> Unit,
 ) {
@@ -1670,6 +1672,7 @@ fun HomeScreen(
                     days = state.days,
                     onEventClick = onEventClick,
                     onEventLongClick = onEventLongClick,
+                    onFillGap = onFillGap,
                 )
             }
         }
@@ -1776,6 +1779,7 @@ private fun TimelineList(
     days: List<HomeDay>,
     onEventClick: (Long) -> Unit,
     onEventLongClick: (Long) -> Unit,
+    onFillGap: (Long, Long) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val itemCount = days.size + days.sumOf { it.segments.size } + days.count { it.isToday }
@@ -1817,6 +1821,7 @@ private fun TimelineList(
                     segment = segment,
                     onClick = single?.let { event -> { onEventClick(event.event.id) } },
                     onLongClick = single?.let { event -> { onEventLongClick(event.event.id) } },
+                    onFillGap = { onFillGap(segment.startAt, segment.endAt) },
                 )
             }
             if (day.isToday) {
@@ -1921,7 +1926,8 @@ data class HomeUiState(
 )
 
 sealed interface EditorTarget {
-    data object New : EditorTarget
+    /** 新建；startAt / endAt 非空时表示由「未分类」空隙点进来，直接预填这段时间。 */
+    data class New(val startAt: Long? = null, val endAt: Long? = null) : EditorTarget
     data class Edit(val eventId: Long) : EditorTarget
 }
 
@@ -1976,7 +1982,12 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
     )
 
     fun openNewRecord() {
-        transient.update { it.copy(editor = EditorTarget.New) }
+        transient.update { it.copy(editor = EditorTarget.New()) }
+    }
+
+    /** 点击未记录的「未分类」空隙：新建记录并预填这段时间。 */
+    fun openFillRecord(startAt: Long, endAt: Long) {
+        transient.update { it.copy(editor = EditorTarget.New(startAt = startAt, endAt = endAt)) }
     }
 
     fun openEditRecord(eventId: Long) {
@@ -2083,6 +2094,7 @@ fun TimelineSegmentRow(
     segment: TimelineSegment,
     onClick: (() -> Unit)?,
     onLongClick: (() -> Unit)?,
+    onFillGap: (() -> Unit)? = null,
 ) {
     val height = rememberBlockHeight(segment)
     val hairline = MaterialTheme.colorScheme.outlineVariant
@@ -2115,7 +2127,13 @@ fun TimelineSegmentRow(
             .weight(1f)
             .height(height)
         if (segment.isUnrecorded) {
-            UnrecordedBlock(segment = segment, modifier = blockModifier)
+            // 空隙本身就是一段「未分类」时间：点它可以就地补记。
+            val fillable = if (onFillGap != null && segment.endAt - segment.startAt >= 60_000L) {
+                blockModifier.combinedClickable(onClick = { onFillGap() }, onLongClick = {})
+            } else {
+                blockModifier
+            }
+            UnrecordedBlock(segment = segment, modifier = fillable)
         } else {
             val clickable = if (onClick != null || onLongClick != null) {
                 blockModifier.combinedClickable(
@@ -2773,12 +2791,33 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
         loadJob?.cancel()
         _uiState.update { it.copy(isSaving = false, saved = false, timeError = false) }
         when (target) {
-            EditorTarget.New -> startNew()
+            is EditorTarget.New -> startNew(target)
             is EditorTarget.Edit -> startEdit(target.eventId)
         }
     }
 
-    private fun startNew() {
+    private fun startNew(prefill: EditorTarget.New) {
+        if (prefill.startAt != null && prefill.endAt != null && prefill.endAt > prefill.startAt) {
+            val startLocal = DateTimeFormat.toLocalDateTime(prefill.startAt)
+            val endLocal = DateTimeFormat.toLocalDateTime(prefill.endAt)
+            _uiState.update {
+                it.copy(
+                    isEditing = false,
+                    eventId = null,
+                    note = "",
+                    startDate = startLocal.toLocalDate(),
+                    startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
+                    endDate = endLocal.toLocalDate(),
+                    endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
+                    timeError = false,
+                )
+            }
+            return
+        }
+        startNewNow()
+    }
+
+    private fun startNewNow() {
         val now = LocalDateTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0)
         val fallbackStart = now.minusMinutes(30)
         _uiState.update {
