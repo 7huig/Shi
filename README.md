@@ -43,7 +43,7 @@
 
 | 项目 | 版本 / 取值 |
 | --- | --- |
-| 应用版本 | 0.1.0（versionCode 6） |
+| 应用版本 | 0.2.0（versionCode 7） |
 | Android | minSdk 29 · targetSdk 31 · compileSdk 36 |
 | 语言与工具 | Kotlin 2.2.10 · Gradle 9.1.0 · AGP 9.0.1 · JDK 17 |
 | UI | Jetpack Compose（BOM 2025.08.01）· Material 3 |
