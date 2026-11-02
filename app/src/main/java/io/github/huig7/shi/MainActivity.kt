@@ -158,6 +158,9 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                         onPrevious = statisticsViewModel::goPrevious,
                         onNext = statisticsViewModel::goNext,
                         onCustomRangeSelected = statisticsViewModel::setCustomRange,
+                        onCategoryDrilled = statisticsViewModel::drillInto,
+                        onDrillUp = statisticsViewModel::drillUp,
+                        onCrumbSelected = statisticsViewModel::focusAt,
                         footer = { DataTransferSection(viewModel = transferViewModel) },
                     )
                 }
@@ -197,6 +200,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 onEditorSave = categoryViewModel::saveEditor,
                 onDeleteDismiss = categoryViewModel::dismissDelete,
                 onDeleteConfirm = categoryViewModel::confirmDelete,
+                onMove = categoryViewModel::moveCategory,
                 onMessageShown = categoryViewModel::consumeMessage,
             )
         }

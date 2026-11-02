@@ -2,6 +2,7 @@ package io.github.huig7.shi.ui.stats
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,6 +67,9 @@ import kotlin.math.roundToInt
 /** 自定义时间段需要连续弹两次日期选择：先起始日，再结束日。 */
 private enum class DatePickerStep { START, END }
 
+/** 下钻层数上限：环形图最多三层（见 [io.github.huig7.shi.domain.StatsBuilder.MAX_DEPTH]），最多再进入两级。 */
+private const val MAX_DRILL_LEVELS = 2
+
 private const val RING_LAYER_COUNT = 3
 private const val RING_GAP_ANGLE = 2.5f
 private const val RING_MIN_ANGLE = 1f
@@ -77,6 +81,9 @@ private val RING_OUTER_RATIOS = floatArrayOf(0.68f, 0.84f, 1.0f)
 /**
  * 统计页（v3.0）：模式切换、范围导航、多层环形堆叠图与分类用时列表。
  *
+ * 点击有子分类的行可下钻到下一级，顶部面包屑与返回按钮逐级回到根层；
+ * 下钻只影响「分类用时」区块与环图层级，模式、翻页和自定义区间照常可用。
+ *
  * 页面整体可滚动；[footer] 渲染在内容最后，用于承载底部数据迁移入口。
  */
 @Composable
@@ -86,6 +93,9 @@ fun StatisticsScreen(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
+    onCategoryDrilled: (Long) -> Unit,
+    onDrillUp: () -> Unit,
+    onCrumbSelected: (Int) -> Unit,
     footer: @Composable () -> Unit = {},
 ) {
     val summary = state.summary
@@ -121,6 +131,13 @@ fun StatisticsScreen(
             onNext = onNext,
             onEditCustomRange = ::openCustomRangePicker,
         )
+        if (state.focusPath.isNotEmpty()) {
+            DrillHeader(
+                path = state.focusPath,
+                onDrillUp = onDrillUp,
+                onCrumbSelected = onCrumbSelected,
+            )
+        }
         when {
             state.isLoading -> Unit
             summary == null -> Unit
@@ -130,14 +147,22 @@ fun StatisticsScreen(
                     EmptyStats()
                 } else {
                     SectionHeader("分类用时")
+                    // 环形图最多三层，因此最多再下钻两级；叶子分类没有下一级，整行不可点。
+                    val canDrillFurther = state.focusPath.size < MAX_DRILL_LEVELS
                     val maxMillis = summary.roots.maxOfOrNull { it.millis } ?: 1L
-                    summary.roots.forEach { root ->
-                        CategoryUsageRow(
-                            usage = root,
-                            maxMillis = maxMillis,
-                            riseColor = riseColor,
-                            fallColor = fallColor,
-                        )
+                    if (summary.roots.isEmpty() && state.focusPath.isNotEmpty()) {
+                        DrillEmptyHint()
+                    } else {
+                        summary.roots.forEach { root ->
+                            val drillable = canDrillFurther && root.children.isNotEmpty()
+                            CategoryUsageRow(
+                                usage = root,
+                                maxMillis = maxMillis,
+                                riseColor = riseColor,
+                                fallColor = fallColor,
+                                onDrill = if (drillable) onCategoryDrilled else null,
+                            )
+                        }
                     }
                 }
             }
@@ -358,12 +383,89 @@ private fun EmptyStats() {
     )
 }
 
+/** 下钻时显示在范围导航下方的返回按钮与面包屑。 */
+@Composable
+private fun DrillHeader(
+    path: List<StatisticsCrumb>,
+    onDrillUp: () -> Unit,
+    onCrumbSelected: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onDrillUp) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                contentDescription = "返回上一级分类",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CrumbText(text = "全部分类", active = false) { onCrumbSelected(0) }
+            path.forEachIndexed { index, crumb ->
+                Text(
+                    text = "/",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CrumbText(text = crumb.name, active = index == path.lastIndex) {
+                    onCrumbSelected(index + 1)
+                }
+            }
+        }
+    }
+}
+
+/** 面包屑的一节；[active] 为当前层级，不可再点。 */
+@Composable
+private fun CrumbText(text: String, active: Boolean, onClick: () -> Unit) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(enabled = !active, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        fontSize = 13.sp,
+        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (active) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** 下钻到的分类本身有记录、但没有可继续细分的子分类。 */
+@Composable
+private fun DrillEmptyHint() {
+    Text(
+        text = "该分类下暂无可细分的子分类",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        fontSize = 14.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** [onDrill] 不为 null 时整行可点（回调分类 ID），并在行尾显示进入下一级的箭头。 */
 @Composable
 private fun CategoryUsageRow(
     usage: CategoryUsage,
     maxMillis: Long,
     riseColor: Color,
     fallColor: Color,
+    onDrill: ((Long) -> Unit)? = null,
 ) {
     val accent = Color(usage.colorHex)
     val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -373,9 +475,13 @@ private fun CategoryUsageRow(
         (usage.millis.toDouble() / maxMillis.toDouble()).toFloat().coerceIn(0.03f, 1f)
     }
 
+    val rowModifier = onDrill?.let { drill ->
+        Modifier.clickable { drill(usage.categoryId) }
+    } ?: Modifier
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .then(rowModifier)
             .padding(horizontal = 20.dp, vertical = 7.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -415,6 +521,15 @@ private fun CategoryUsageRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
             )
+            if (onDrill != null) {
+                Spacer(Modifier.width(2.dp))
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = "查看下一级分类",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Box(

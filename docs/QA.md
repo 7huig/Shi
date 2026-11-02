@@ -8,8 +8,10 @@
 
 - [x] 应用名叫「時」，桌面图标与顶栏一致；顶栏两个页签「時記」「時計」同款 23sp 衬线，选中为墨色、未选为次要色。
 - [x] 时间轴页没有整条「完成」按钮，右下角是 62dp 蓝底圆圈 + 白色加号；点击打开「记录一段」。
-- [x] 主界面时间 13sp、分类路径 14sp；日期标题为「今天 / 昨天 / M月d日」，不显示年份，星期只在副标题小字里（如「11月1日 · 周日」）。
+- [x] 主界面时间 13sp、分类路径 16sp；日期标题为「今天 / 昨天 / M月d日」，不显示年份；今天与昨天只在副标题显示「周X」，其它日期显示完整「M月d日 周X」。
+- [x] 左侧时分标签的中心正落在相邻两个事件之间（首段保持顶部对齐）。
 - [x] 点记录块内空白区域也能打开编辑；块内每条记录仍可单独点按。
+- [x] 记录弹窗没有「分类 / 时间 / 备注」「开始 / 结束」之类的小字标签，备注占位符为「请输入文本」，整体纵向紧凑。
 - [x] 分类编辑弹窗为 4 行 × 6 列节气色板：春 / 夏 / 秋 / 冬 四行，每色下方标注节气名，选中色块有描边。
 - [x] 统计页顶栏为 日 / 周 / 月 / 年 / 自定义 五个 chip；左右箭头可查看前一个 / 后一个周期（当前为「今天」时右箭头禁用）。
 - [x] 周视图三层环图：外、中、内三圈分别对应根 / 子 / 孙分类，中心显示总时长与记录条数。
@@ -18,10 +20,13 @@
 - [x] 分类用时行：分类名右侧「N次」，时长左侧环比——增加红色、减少绿色、持平「0%」灰色、上一周期无记录显示红色「新增」。
 - [x] 导出文件名为 `時-yyyy-MM-dd.json`（schema 1）。
 - [x] 深色模式下环图、环比红绿、色板、FAB 均正确。
-- [x] 分类页提示语为「分类最多 3 层。删除分类时，其中的事件会一并删除。」
+- [x] 分类页提示语为「按住右侧手柄上下拖动，可调整同级分类的顺序。最多 3 层，删除分类时其中的事件会一并删除。」
+- [x] 按住某行右侧三横线手柄上下拖动，行随手指实时换位；松手后顺序写入数据库，杀掉进程重进仍然保留。
+- [x] 「時計」中点一级分类进入下一级统计：环图与分类用时切换为该分类的子分类，面包屑「全部分类 / …」可逐级返回。
+- [x] 搜索结果顶部显示「找到 N 条记录」与「共 X 小时」的总时长。
 - [x] 旧版本数据库（v3）升级到 v4：默认分类换新色、用户自定义色保留、记录完整。
 - [x] `am force-stop` 后重启，数据完整保留。
-- [x] `./gradlew testDebugUnitTest assembleDebug --console=plain --offline` 全绿（TimelineBuilder 7 + OverlapResolver 12 + Statistics 26 = 45 例）。
+- [x] `./gradlew testDebugUnitTest assembleDebug --console=plain --offline` 全绿（TimelineBuilder 7 + OverlapResolver 12 + Statistics 34 = 53 例）。
 - [x] `./gradlew assembleRelease` 产物已签名（R8 压缩 + 资源收缩），安装后启动、空态、记录弹窗正常。
 
 ## 常见问题
@@ -67,11 +72,11 @@ keyPassword=你的密码
 ./gradlew testDebugUnitTest
 ```
 
-共 45 例。没有 instrumentation / Compose UI 测试，交互验收依赖上面的手动清单。
+共 53 例（TimelineBuilder 7 + OverlapResolver 12 + Statistics 34）。没有 instrumentation / Compose UI 测试，交互验收依赖上面的手动清单。
 
 ### 图标是用什么做的？字体许可？
 
-`design/icons/render.py` 用 Pillow 以 4× 超采样绘制 5 个方向，选定 A（墨時）后由 `build_launcher_assets.py` 生成自适应图标前景。字体为 **Noto Serif SC / Noto Sans SC**，采用 [SIL Open Font License 1.1](https://openfontlicense.org/)，可自由使用与再分发；字体文件本身不随仓库分发，脚本从系统字体目录加载。
+`design/icons/render.py` 用 Pillow 以 4× 超采样绘制唯一的「墨時」方案，`build_launcher_assets.py` 直接由字体生成 5 档自适应图标前景。字体为 **Noto Serif SC**，采用 [SIL Open Font License 1.1](https://openfontlicense.org/)，可自由使用与再分发；字体文件本身不随仓库分发，脚本从系统字体目录加载。前景几何按 66dp 安全圆程序化校验（墨迹四角到中心 26.68dp），字形不会被 launcher 遮罩切到。
 
 ### 截图是怎么生成的？
 

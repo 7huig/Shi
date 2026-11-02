@@ -24,6 +24,10 @@ interface CategoryDao {
     @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM category WHERE parentId IS :parentId")
     suspend fun maxSortOrder(parentId: Long?): Int
 
+    /** 同一个父分类下的兄弟节点，按展示顺序排列；用于拖动排序时重写 sortOrder。 */
+    @Query("SELECT * FROM category WHERE parentId IS :parentId ORDER BY sortOrder ASC, id ASC")
+    suspend fun getSiblings(parentId: Long?): List<CategoryEntity>
+
     @Insert
     suspend fun insert(category: CategoryEntity): Long
 

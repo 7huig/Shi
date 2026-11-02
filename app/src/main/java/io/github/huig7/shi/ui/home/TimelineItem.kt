@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,6 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,9 +36,11 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.huig7.shi.domain.model.TimelineSegment
@@ -71,9 +78,13 @@ fun TimelineSegmentRow(
     onEventClick: (Long) -> Unit = {},
     onEventLongClick: (Long) -> Unit = {},
     onFillGap: (() -> Unit)? = null,
+    /** true 时把左侧时间垂直居中在上一段与本段的接缝上（首段保持顶部对齐）。 */
+    centerTimeLabel: Boolean = true,
 ) {
     val height = rememberBlockHeight(segment)
     val hairline = MaterialTheme.colorScheme.outlineVariant
+    var labelHeightPx by remember { mutableIntStateOf(0) }
+    val gapHalfPx = with(androidx.compose.ui.platform.LocalDensity.current) { 3.dp.roundToPx() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -88,11 +99,22 @@ fun TimelineSegmentRow(
                     lineHeight = 17.sp,
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 3.dp),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .onSizeChanged { labelHeightPx = it.height }
+                    .then(
+                        if (centerTimeLabel) {
+                            Modifier.offset {
+                                IntOffset(0, -(gapHalfPx + labelHeightPx / 2))
+                            }
+                        } else {
+                            Modifier.padding(top = 3.dp)
+                        },
+                    ),
             )
         }
         androidx.compose.foundation.Canvas(modifier = Modifier.width(6.dp).height(height)) {
-            val y = 8.dp.toPx()
+            val y = if (centerTimeLabel) 0f else 8.dp.toPx()
             drawLine(
                 color = hairline,
                 start = Offset(0f, y),
@@ -189,8 +211,8 @@ private fun RecordedBlock(
                         Text(
                             text = item.categoryPath,
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 14.sp,
-                                lineHeight = 18.sp,
+                                fontSize = 16.sp,
+                                lineHeight = 20.sp,
                                 fontWeight = FontWeight.Medium,
                             ),
                             color = textColor,
@@ -271,8 +293,8 @@ private fun UnrecordedBlock(
                 Text(
                     text = name,
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 13.sp,
-                        lineHeight = 17.sp,
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp,
                     ),
                     color = labelColor,
                 )

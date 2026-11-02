@@ -78,7 +78,7 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
             HomeDay(
                 date = day.date,
                 title = DateTimeFormat.sectionTitle(day.date, today),
-                subtitle = DateTimeFormat.sectionSubtitle(day.date, today),
+                subtitle = DateTimeFormat.sectionSubtitle(day.date),
                 isToday = day.isToday,
                 segments = day.segments,
             )

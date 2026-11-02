@@ -130,6 +130,11 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         }
     }
 
+    /** 拖动排序：在同父分类的兄弟节点之间移动。 */
+    fun moveCategory(categoryId: Long, targetIndex: Int) {
+        viewModelScope.launch { repository.moveCategory(categoryId, targetIndex) }
+    }
+
     fun requestDelete(node: CategoryNode) {
         if (node.category.isSystem) {
             transient.update { it.copy(message = "「未分类」用于兜底，不能删除") }

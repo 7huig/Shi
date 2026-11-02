@@ -1,267 +1,271 @@
-
 # -*- coding: utf-8 -*-
-"""時計 launcher icon concepts - flat vector, 4x supersampled, LANCZOS downscale."""
-import os, math
+"""時 · Shi — 「墨時」launcher icon 母版渲染器（唯一方案）。
+
+母版即 Android 自适应图标的 108 dp 画布：512 px ↔ 108 dp（1 dp = 512/108 px）。
+「時」用 Noto Serif SC SemiBold（SIL OFL-1.1）渲染，墨迹高 38 dp、按墨迹外框居中。
+实测墨迹宽高比 0.9859（字体本身接近方形，并非早期估计的 1.26），38 dp 高时四角到画布中心
+≈ 26.68 dp，落在 66 dp 安全圆（半径 33 dp）内并留 ≈ 6.32 dp 余量；即使按「半径 31.5 dp」
+的检查线也还有 ≈ 4.82 dp。因此 launcher 的圆形/圆角遮罩不会切到任何笔画。
+
+用法（仓库根目录）：
+    python design/icons/render.py
+
+产物：
+    design/icons/icon-A.png        512×512  松绿底 + 纸白「時」（= 108 dp 画布母版）
+    design/icons/icon-A-round.png  512×512  72 dp 圆形遮罩预览（圆外透明，即 launcher 实际所见）
+
+启动器前景 PNG 由 build_launcher_assets.py 直接从这个模块的几何与字形渲染函数生成。
+"""
+
+import math
+import os
+
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = os.path.dirname(os.path.abspath(__file__))
-W, S = 512, 4
-C = W * S
+HERE = os.path.dirname(os.path.abspath(__file__))
 
-PAPER     = (251, 250, 247)
-INK       = (30, 33, 31)
-PINE      = (47, 93, 80)
-PINE_SOFT = (230, 239, 234)
-CLAY      = (180, 101, 74)
-HAIR      = (228, 225, 218)
-OCHRE     = (192, 122, 43)
-MUTED     = (108, 110, 106)
+# ---------------------------------------------------------------- 自适应图标几何（dp）
+CANVAS_DP = 108.0       # 自适应图标前景画布
+VISIBLE_DP = 72.0       # launcher 遮罩内可见区域直径
+SAFE_DP = 66.0          # 关键内容安全区圆直径（官方建议）
+GLYPH_DP = 38.0         # 「時」墨迹高度
+MARGIN_DP = 1.5         # 四角至少离安全圆 1.5 dp（检查线半径 = SAFE_DP/2 - MARGIN_DP）
+MASTER_PX = 512         # 母版像素尺寸：512 px = 108 dp
+SUPERSAMPLE = 4         # 母版超采样倍数
 
-# 字体全部使用 SIL Open Font License 1.1 的 Noto（思源）系列，可自由再分发；
-# 字体不随仓库分发，缺失时回退到其它常见系统字体（见 _pick）。
+PAPER = (0xFB, 0xFA, 0xF7)
+PINE = (0x2F, 0x5D, 0x50)
+GLYPH = "時"
+
+# 字体全部使用 SIL Open Font License 1.1 的 Noto（思源）系列，可自由使用与再分发；
+# 字体不随仓库分发，缺失时回退到其它常见系统字体。
 #   Noto Serif SC — https://github.com/notofonts/noto-cjk (OFL-1.1)
 #   Noto Sans SC  — https://github.com/notofonts/noto-cjk (OFL-1.1)
-def _pick(*candidates):
-    for p in candidates:
-        if os.path.exists(p):
-            return p
-    raise SystemExit("找不到可用字体，请安装 Noto Serif SC / Noto Sans SC：" + " | ".join(candidates))
-
-SERIF = _pick(
+SERIF_CANDIDATES = (
     r"C:/Windows/Fonts/NotoSerifSC-VF.ttf",
     "/System/Library/Fonts/NotoSerifSC-VF.ttf",
     "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
 )
-SANSB = _pick(
+SANS_CANDIDATES = (
     r"C:/Windows/Fonts/NotoSansSC-VF.ttf",
     "/System/Library/Fonts/NotoSansSC-VF.ttf",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 )
-SANS = SANSB
+
+
+def _pick(candidates, label):
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    raise SystemExit("找不到可用字体 %s，请安装 Noto CJK：" % label + " | ".join(candidates))
+
+
+SERIF = _pick(SERIF_CANDIDATES, "Noto Serif SC")
+SANS = _pick(SANS_CANDIDATES, "Noto Sans SC")
+
+_font_cache = {}
 
 
 def load_font(path, px):
-    """加载字体；可变字体的字重按用途取 SemiBold / Bold / Regular。"""
-    f = ImageFont.truetype(path, int(round(px)))
-    var = "SemiBold" if path == SERIF else ("Bold" if path == SANSB else "Regular")
+    """加载字体；可变字体按用途取字重（衬线 = SemiBold，无衬线 = Regular）。"""
+    key = (path, max(1, int(round(px))))
+    font = _font_cache.get(key)
+    if font is not None:
+        return font
+    font = ImageFont.truetype(path, key[1])
     try:
-        f.set_variation_by_name(var)
+        font.set_variation_by_name("SemiBold" if path == SERIF else "Regular")
     except Exception:
         pass
-    return f
+    _font_cache[key] = font
+    return font
 
-def P(*v):
-    return [float(x) * S for x in v]
 
-def new(bg=PAPER):
-    return Image.new("RGB", (C, C), bg)
+def glyph_mask(em_px):
+    """把「時」渲染成紧贴墨迹外框的 L 蒙版（超大画布，避免笔画被画布裁掉）。"""
+    font = load_font(SERIF, em_px)
+    side = int(round(em_px * 2.4)) + 8
+    tmp = Image.new("L", (side, side), 0)
+    ImageDraw.Draw(tmp).text((side / 2.0, side / 2.0), GLYPH, font=font, fill=255, anchor="mm")
+    bbox = tmp.getbbox()
+    if bbox is None:  # pragma: no cover - 字体损坏时才会发生
+        raise SystemExit("字体渲染不出「時」：" + SERIF)
+    return tmp.crop(bbox)
 
-def glyph_mask(ch, em_px, path):
-    f = load_font(path, em_px)
-    tmp = Image.new("L", (int(em_px * 2) + 80, int(em_px * 2) + 80), 0)
-    ImageDraw.Draw(tmp).text((em_px, em_px), ch, font=f, fill=255)
-    bb = tmp.getbbox()
-    return tmp.crop(bb)
 
-def glyph_ink_target(ch, target_h_512, path):
-    m = glyph_mask(ch, 1000, path)
-    return 1000.0 * target_h_512 * S / m.size[1]
+_ratio = None
 
-def draw_glyph(im, ch, cx, cy, target_h_512, fill, path=SERIF):
-    em = glyph_ink_target(ch, target_h_512, path)
-    m = glyph_mask(ch, em, path)
-    w, h = m.size
-    x = int(round(cx * S - w / 2.0))
-    y = int(round(cy * S - h / 2.0))
-    im.paste(Image.new("RGB", (w, h), fill), (x, y), m)
-    return w / S, h / S
 
-def rline(d, p1, p2, fill, w):
-    d.line([p1, p2], fill=fill, width=int(round(w * S)))
-    r = w * S / 2.0
-    for x, y in (p1, p2):
-        d.ellipse([x - r, y - r, x + r, y + r], fill=fill)
+def ink_ratio():
+    """墨迹宽高比（width / height），首次调用时以 1000 px 渲染测得。"""
+    global _ratio
+    if _ratio is None:
+        mask = glyph_mask(1000)
+        _ratio = mask.size[0] / mask.size[1]
+    return _ratio
 
-def vline(d, p1, p2, fill, w):
-    rline(d, P(*p1), P(*p2), fill, w)
 
-def circle(d, cx, cy, r, fill=None, outline=None, width=0):
-    d.ellipse(P(cx - r, cy - r, cx + r, cy + r), fill=fill, outline=outline,
-              width=int(round(width * S)))
+def glyph_at_ink_height(ink_px):
+    """返回墨迹高度约为 ink_px 的字形蒙版（L）。"""
+    em = 1000.0
+    for _ in range(3):
+        mask = glyph_mask(em)
+        em *= ink_px / mask.size[1]
+    return glyph_mask(em)
 
-def rrect(d, x0, y0, x1, y1, r, fill=None, outline=None, width=0):
-    d.rounded_rectangle(P(x0, y0, x1, y1), radius=r * S, fill=fill,
-                        outline=outline, width=int(round(width * S)))
 
-# ---------------------------------------------------------------- A: 墨時 monogram
-def make_A():
-    im = new(PINE)
-    draw_glyph(im, "時", 256, 256, 306, PAPER, SERIF)
-    return im
+def glyph_layer(size_px, glyph_h_px, color=PAPER):
+    """透明 size_px 画布 + 居中的单色字形（RGBA），返回 (图层, 字形像素尺寸)。"""
+    mask = glyph_at_ink_height(glyph_h_px)
+    layer = Image.new("RGBA", (size_px, size_px), (0, 0, 0, 0))
+    fill = Image.new("RGBA", mask.size, tuple(color) + (255,))
+    layer.paste(fill, ((size_px - mask.size[0]) // 2, (size_px - mask.size[1]) // 2), mask)
+    return layer, mask.size
 
-# ---------------------------------------------------------------- B: minimal clock
-def make_B():
-    im = new(PAPER)
-    d = ImageDraw.Draw(im)
-    cx = cy = 256.0
-    circle(d, cx, cy, 142, outline=INK, width=12)
-    a2 = math.radians(118)                      # clay second hand, with tail
-    vline(d, (cx - 30 * math.cos(a2), cy - 30 * math.sin(a2)),
-             (cx + 131 * math.cos(a2), cy + 131 * math.sin(a2)), CLAY, 4.5)
-    a = math.radians(-150)                      # hour hand -> 10 o'clock
-    vline(d, (cx, cy), (cx + 75 * math.cos(a), cy + 75 * math.sin(a)), INK, 14)
-    a = math.radians(-30)                       # minute hand -> 2 o'clock
-    vline(d, (cx, cy), (cx + 113 * math.cos(a), cy + 113 * math.sin(a)), INK, 12)
-    circle(d, cx, cy, 10.5, fill=INK)
-    circle(d, cx, cy, 4.0, fill=CLAY)
-    return im
 
-# ---------------------------------------------------------------- C: timeline blocks
-def make_C():
-    im = new(PAPER)
-    d = ImageDraw.Draw(im)
-    bars = [(PINE, 268, 52), (CLAY, 196, 78), (OCHRE, 228, 50)]
-    gap = 24.0
-    total = sum(h for _, _, h in bars) + gap * (len(bars) - 1)
-    y = 256 - total / 2.0
-    left = 256 - 134.0
-    for col, bw, bh in bars:
-        rrect(d, left, y, left + bw, y + bh, bh / 2.0, fill=col)
-        y += bh + gap
-    return im
+def metrics():
+    """墨迹与安全区的解析几何（单位 dp）。"""
+    ratio = ink_ratio()
+    width_dp = GLYPH_DP * ratio
+    diagonal_dp = math.hypot(GLYPH_DP, width_dp)
+    corner_dp = diagonal_dp / 2.0
+    safe_radius_dp = SAFE_DP / 2.0
+    limit_dp = safe_radius_dp - MARGIN_DP
+    return {
+        "ratio": ratio,
+        "glyph_dp": GLYPH_DP,
+        "width_dp": width_dp,
+        "diagonal_dp": diagonal_dp,
+        "corner_dp": corner_dp,
+        "safe_radius_dp": safe_radius_dp,
+        "limit_dp": limit_dp,
+        "margin_safe_dp": safe_radius_dp - corner_dp,
+        "margin_limit_dp": limit_dp - corner_dp,
+        "ok": corner_dp <= limit_dp,
+    }
 
-# ---------------------------------------------------------------- D: hanko seal
-def make_D():
-    im = new(PAPER)
-    d = ImageDraw.Draw(im)
-    half = 165.0
-    rrect(d, 256 - half, 256 - half, 256 + half, 256 + half, 18, fill=CLAY)
-    inset = 16.0
-    rrect(d, 256 - half + inset, 256 - half + inset,
-          256 + half - inset, 256 + half - inset, 9,
-          outline=PAPER, width=3.2)
-    draw_glyph(im, "時", 256, 256, 230, PAPER, SANSB)
-    return im
 
-# ---------------------------------------------------------------- E: sun-moon arc
-def recenter(im, bg):
-    from PIL import ImageChops
-    bb = ImageChops.difference(im, Image.new("RGB", im.size, bg)).getbbox()
-    dx = im.size[0] / 2.0 - (bb[0] + bb[2]) / 2.0
-    dy = im.size[1] / 2.0 - (bb[1] + bb[3]) / 2.0
-    return im.transform(im.size, Image.AFFINE, (1, 0, -dx, 0, 1, -dy),
-                        resample=Image.BICUBIC, fillcolor=bg)
-
-def make_E():
-    im = new(PINE_SOFT)
-    d = ImageDraw.Draw(im)
-    cx, cy, r = 256.0, 318.0, 140.0
-    d.arc(P(cx - r, cy - r, cx + r, cy + r), 180, 360, fill=INK,
-          width=int(round(12 * S)))
-    circle(d, cx - r, cy, 16, fill=INK)       # moon
-    circle(d, cx + r, cy, 25, fill=CLAY)      # sun
-    return recenter(im, PINE_SOFT)
-
-MAKERS = {"A": make_A, "B": make_B, "C": make_C, "D": make_D, "E": make_E}
-NAMES = [("A", "墨時", "「時」字徽"),
-         ("B", "素時計", "极简表盘"),
-         ("C", "時流", "时间块"),
-         ("D", "朱印", "朱色印章"),
-         ("E", "日月弧", "昼夜之弧")]
-
-def hi_circle_mask():
-    m = Image.new("L", (C, C), 0)
-    ImageDraw.Draw(m).ellipse([0, 0, C - 1, C - 1], fill=255)
+def check(verbose=True):
+    """程序化校验：四角到中心 ≤ 33 dp - 1.5 dp = 31.5 dp，不满足直接失败。"""
+    m = metrics()
+    if not m["ok"]:
+        raise SystemExit(
+            "「時」超出安全区：四角距中心 %.2f dp > 允许 %.2f dp"
+            % (m["corner_dp"], m["limit_dp"])
+        )
+    if verbose:
+        print(
+            "glyph 時: %.2f x %.2f dp (w/h %.4f), diagonal %.2f dp, corner radius %.2f dp"
+            % (m["width_dp"], m["glyph_dp"], m["ratio"], m["diagonal_dp"], m["corner_dp"])
+        )
+        print(
+            "safe circle %.0f dp (r %.1f): margin %.2f dp; margin over %.2f dp check line %.2f dp  OK"
+            % (SAFE_DP, m["safe_radius_dp"], m["margin_safe_dp"], m["limit_dp"], m["margin_limit_dp"])
+        )
     return m
 
-MASK_HI = hi_circle_mask()
 
-def save_icons():
-    for k, fn in MAKERS.items():
-        im = fn()
-        im.resize((W, W), Image.LANCZOS).save(os.path.join(OUT, "icon-%s.png" % k))
-        r = im.convert("RGBA")
-        r.putalpha(MASK_HI)
-        r.resize((W, W), Image.LANCZOS).save(os.path.join(OUT, "icon-%s-round.png" % k))
+def _hi_master():
+    """2048 px 超采样母版（RGB，松绿底 + 纸白「時」）。"""
+    hi = MASTER_PX * SUPERSAMPLE
+    image = Image.new("RGB", (hi, hi), PINE)
+    layer, _ = glyph_layer(hi, GLYPH_DP * hi / CANVAS_DP)
+    image.paste(layer, (0, 0), layer)
+    return image
 
-def fnt(path, px):
-    return load_font(path, px)
 
-def ctext(d, xy, txt, font, fill):
-    bb = d.textbbox((0, 0), txt, font=font)
-    d.text((xy[0] - (bb[2] - bb[0]) / 2.0 - bb[0],
-            xy[1] - (bb[3] - bb[1]) / 2.0 - bb[1]), txt, font=font, fill=fill)
+def make_master():
+    """512 px 母版 = 108 dp 画布。"""
+    return _hi_master().resize((MASTER_PX, MASTER_PX), Image.LANCZOS)
 
-def rtext(d, xy, txt, font, fill):
-    bb = d.textbbox((0, 0), txt, font=font)
-    d.text((xy[0] - (bb[2] - bb[0]) - bb[0], xy[1] - bb[1]), txt, font=font, fill=fill)
 
-def make_overview():
-    SC = 2
-    OW, OH = 1720, 860
-    bg = (242, 239, 233)
-    im = Image.new("RGB", (OW * SC, OH * SC), bg)
-    d = ImageDraw.Draw(im)
+def make_round():
+    """512 px 圆形预览：按 72 dp 可见区裁圆，圆外透明。"""
+    hi = MASTER_PX * SUPERSAMPLE
+    image = _hi_master().convert("RGBA")
+    mask = Image.new("L", (hi, hi), 0)
+    radius = VISIBLE_DP / CANVAS_DP * hi / 2.0
+    center = hi / 2.0
+    ImageDraw.Draw(mask).ellipse(
+        [center - radius, center - radius, center + radius, center + radius], fill=255
+    )
+    image.putalpha(mask)
+    return image.resize((MASTER_PX, MASTER_PX), Image.LANCZOS)
 
-    def T(v):
-        return int(round(v * SC))
 
-    f_title = fnt(SERIF, 46 * SC)
-    f_sub   = fnt(SANS, 21 * SC)
-    f_note  = fnt(SANS, 17 * SC)
-    f_let   = fnt(SANSB, 40 * SC)
-    f_name  = fnt(SERIF, 30 * SC)
-    f_cap   = fnt(SANS, 21 * SC)
+# ---------------------------------------------------------------- 像素级测量（供校验/报告）
+def _finish_measure(mask_fn, w, h):
+    """遍历像素求墨迹外框与到画布中心的最大距离（px）与 dp 值。"""
+    cx, cy = w / 2.0, h / 2.0
+    minx, miny, maxx, maxy = w, h, -1, -1
+    r2max = -1.0
+    for y in range(h):
+        for x in range(w):
+            if not mask_fn(x, y):
+                continue
+            if x < minx:
+                minx = x
+            if y < miny:
+                miny = y
+            if x > maxx:
+                maxx = x
+            if y > maxy:
+                maxy = y
+            dx = x + 0.5 - cx
+            dy = y + 0.5 - cy
+            r2 = dx * dx + dy * dy
+            if r2 > r2max:
+                r2max = r2
+    scale = CANVAS_DP / w
+    corner = 0.0
+    if maxx >= 0:
+        for px in (minx, maxx):
+            for py in (miny, maxy):
+                corner = max(corner, math.hypot(px + 0.5 - cx, py + 0.5 - cy))
+    return {
+        "w_dp": (maxx - minx + 1) * scale if maxx >= 0 else 0.0,
+        "h_dp": (maxy - miny + 1) * scale if maxy >= 0 else 0.0,
+        "corner_dp": corner * scale,
+        "ink_radius_dp": math.sqrt(r2max) * scale if r2max >= 0 else 0.0,
+    }
 
-    # header
-    bb = d.textbbox((0, 0), "時計", font=f_title)
-    d.text((T(76), T(42) - bb[1]), "時計", font=f_title, fill=INK)
-    tw = bb[2] - bb[0]
-    d.text((T(76) + tw + T(20), T(66) - f_sub.getbbox("cg")[1]),
-           "launcher icon concepts", font=f_sub, fill=MUTED)
-    d.text((T(76), T(112)), "五个方向 · five directions", font=f_note, fill=MUTED)
-    d.line([T(76), T(148), T(OW - 76), T(148)], fill=HAIR, width=T(2))
 
-    # five icon columns
-    cellw, cy, dia = 320.0, 330.0, 216.0
-    x0 = (OW - cellw * 5) / 2.0
-    icons = {k: Image.open(os.path.join(OUT, "icon-%s-round.png" % k)).convert("RGBA")
-             for k in "ABCDE"}
-    for i, (letter, nm, cap) in enumerate(NAMES):
-        cx = x0 + cellw * i + cellw / 2.0
-        ic = icons[letter].resize((T(dia), T(dia)), Image.LANCZOS)
-        im.paste(ic, (T(cx - dia / 2.0), T(cy - dia / 2.0)), ic)
-        d.ellipse([T(cx - dia / 2.0), T(cy - dia / 2.0),
-                   T(cx + dia / 2.0), T(cy + dia / 2.0)],
-                  outline=HAIR, width=T(2))
-        ctext(d, (T(cx), T(cy + dia / 2.0 + 44)), letter, f_let, INK)
-        ctext(d, (T(cx), T(cy + dia / 2.0 + 92)), nm, f_name, INK)
-        ctext(d, (T(cx), T(cy + dia / 2.0 + 130)), cap, f_cap, MUTED)
+def measure_rgba(im, alpha_min=8):
+    """测量自适应图标前景（RGBA）里的字形墨迹。"""
+    w, h = im.size
+    alpha = im.getchannel("A").load()
+    return _finish_measure(lambda x, y: alpha[x, y] >= alpha_min, w, h)
 
-    # 96 px band
-    d.line([T(76), T(612), T(OW - 76), T(612)], fill=HAIR, width=T(2))
-    ctext(d, (T(OW / 2.0), T(640)), "96 px  ·  手机主屏尺寸预览", f_note, MUTED)
-    for i, (letter, _, _) in enumerate(NAMES):
-        cx = x0 + cellw * i + cellw / 2.0
-        ic = icons[letter].resize((T(96), T(96)), Image.LANCZOS)
-        im.paste(ic, (T(cx - 48), T(662)), ic)
 
-    ctext(d, (T(OW / 2.0), T(812)),
-          "時計  ·  washi paper / ink / pine / clay  ·  512 px masters", f_note, MUTED)
+def measure_on_pine(im, diff_min=12):
+    """测量松绿底母版里的纸白墨迹（用于母版像素级复核）。"""
+    w, h = im.size
+    px = im.convert("RGB").load()
+    pr, pg, pb = PINE
 
-    im.resize((OW, OH), Image.LANCZOS).save(os.path.join(OUT, "overview.png"))
+    def is_ink(x, y):
+        r, g, b = px[x, y]
+        return abs(r - pr) + abs(g - pg) + abs(b - pb) > diff_min
 
-def make_checks():
-    for bgcol, tag in [((255, 255, 255), "light"), ((23, 26, 24), "dark")]:
-        strip = Image.new("RGB", (5 * 120, 120), bgcol)
-        for i, k in enumerate("ABCDE"):
-            ic = Image.open(os.path.join(OUT, "icon-%s-round.png" % k)).convert("RGBA")
-            ic = ic.resize((96, 96), Image.LANCZOS)
-            strip.paste(ic, (i * 120 + 12, 12), ic)
-        strip.save(os.path.join(OUT, "_check96-%s.png" % tag))
+    return _finish_measure(is_ink, w, h)
+
+
+def main():
+    m = check()
+    master = make_master()
+    master_path = os.path.join(HERE, "icon-A.png")
+    master.save(master_path)
+    round_path = os.path.join(HERE, "icon-A-round.png")
+    make_round().save(round_path)
+
+    raster = measure_on_pine(master)
+    print(
+        "master 512 px = 108 dp: ink %.2f x %.2f dp, corner radius %.2f dp, max ink radius %.2f dp"
+        % (raster["w_dp"], raster["h_dp"], raster["corner_dp"], raster["ink_radius_dp"])
+    )
+    print("wrote design/icons/icon-A.png, design/icons/icon-A-round.png")
+    return m
+
 
 if __name__ == "__main__":
-    save_icons()
-    make_overview()
-    make_checks()
-    print("rendered")
+    main()

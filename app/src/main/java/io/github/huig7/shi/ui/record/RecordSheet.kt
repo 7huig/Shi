@@ -42,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -91,28 +90,22 @@ fun RecordSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
 
-            Spacer(Modifier.height(18.dp))
-            FieldLabel("分类")
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(14.dp))
             CategoryGrid(
                 tree = state.tree,
                 selectedId = state.selectedCategoryId,
                 onSelect = onCategorySelected,
             )
 
-            Spacer(Modifier.height(20.dp))
-            FieldLabel("时间")
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
             TimeField(
-                label = "开始",
                 date = state.startDate,
                 time = state.startTime,
                 onDateClick = { picker = PickerTarget.StartDate },
                 onTimeClick = { picker = PickerTarget.StartTime },
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             TimeField(
-                label = "结束",
                 date = state.endDate,
                 time = state.endTime,
                 onDateClick = { picker = PickerTarget.EndDate },
@@ -123,25 +116,23 @@ fun RecordSheet(
                     text = "结束时间需要晚于开始时间",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(start = 38.dp, top = 6.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
-            FieldLabel("备注")
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = state.note,
                 onValueChange = onNoteChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("可留空", style = MaterialTheme.typography.bodyMedium) },
+                placeholder = { Text("请输入文本", style = MaterialTheme.typography.bodyMedium) },
                 minLines = 2,
                 maxLines = 3,
                 shape = RoundedCornerShape(14.dp),
                 textStyle = MaterialTheme.typography.bodyMedium,
             )
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onDismiss) { Text("取消") }
                 Spacer(Modifier.weight(1f))
@@ -221,30 +212,13 @@ fun RecordSheet(
 }
 
 @Composable
-private fun FieldLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.Medium,
-    )
-}
-
-@Composable
 private fun TimeField(
-    label: String,
     date: LocalDate,
     time: LocalTime,
     onDateClick: () -> Unit,
     onTimeClick: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(38.dp),
-        )
         Surface(
             onClick = onDateClick,
             shape = RoundedCornerShape(10.dp),

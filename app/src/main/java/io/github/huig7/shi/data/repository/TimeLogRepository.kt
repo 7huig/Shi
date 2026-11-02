@@ -198,6 +198,28 @@ class TimeLogRepository(private val database: AppDatabase) {
         categoryDao.update(existing.copy(name = name.trim(), colorHex = colorHex))
     }
 
+    /**
+     * 同级拖动排序：把 [categoryId] 移动到同一个父分类下的 [targetIndex] 位置。
+     * 重写这一组兄弟的 sortOrder 为 0..n-1，保证与列表展示顺序一致（列表按 sortOrder, id 排序）。
+     */
+    suspend fun moveCategory(categoryId: Long, targetIndex: Int) = database.withTransaction {
+        val moving = categoryDao.getById(categoryId) ?: return@withTransaction
+        val siblings = categoryDao.getSiblings(moving.parentId)
+        val from = siblings.indexOfFirst { it.id == categoryId }
+        if (from < 0) return@withTransaction
+        val to = targetIndex.coerceIn(0, siblings.lastIndex)
+        if (to == from) return@withTransaction
+        val reordered = siblings.toMutableList().apply {
+            removeAt(from)
+            add(to, moving)
+        }
+        reordered.forEachIndexed { index, entity ->
+            if (entity.sortOrder != index) {
+                categoryDao.update(entity.copy(sortOrder = index))
+            }
+        }
+    }
+
     suspend fun countEventsInSubtree(categoryId: Long): Int {
         val tree = buildCategoryTree(categoryDao.getAll().map { it.toDomain() })
         val ids = tree.subtreeIds(categoryId)

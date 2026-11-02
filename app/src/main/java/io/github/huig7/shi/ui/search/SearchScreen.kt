@@ -173,12 +173,26 @@ private fun SearchResultList(
         contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
     ) {
         item(key = "count") {
-            Text(
-                text = "找到 " + results.size + " 条记录",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 2.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "找到 " + results.size + " 条记录",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "共 " + DateTimeFormat.durationText(
+                        results.sumOf { it.event.durationMillis },
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
         items(items = results, key = { it.event.id }) { item ->
             SearchResultRow(item = item, onClick = { onOpenEvent(item.event.id) })

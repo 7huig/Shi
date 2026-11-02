@@ -40,12 +40,8 @@ object DateTimeFormat {
             else -> monthDay(date)
         }
 
-    /** 主界面日期副标题：今天/昨天补上日期，其余只留「周X」小字。 */
-    fun sectionSubtitle(date: LocalDate, today: LocalDate = LocalDate.now(zone())): String =
-        when (date) {
-            today, today.minusDays(1) -> monthDay(date) + " · " + weekdayLabel(date)
-            else -> weekdayLabel(date)
-        }
+    /** 主界面日期副标题：只显示「周X」小字，今天/昨天也不再重复日期。 */
+    fun sectionSubtitle(date: LocalDate): String = weekdayLabel(date)
 
     /** 固定输出「周日」「周一」…，不依赖不同 JDK 的 CLDR 短星期文本。 */
     private fun weekdayLabel(date: LocalDate): String =

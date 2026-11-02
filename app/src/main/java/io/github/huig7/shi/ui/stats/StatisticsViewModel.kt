@@ -9,6 +9,7 @@ import io.github.huig7.shi.domain.StatsMode
 import io.github.huig7.shi.domain.StatsSummary
 import io.github.huig7.shi.domain.StatsWindow
 import io.github.huig7.shi.domain.StatsWindows
+import io.github.huig7.shi.domain.model.CategoryTree
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -23,6 +24,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 
+/** 面包屑的一节：从根分类到当前聚焦分类。 */
+data class StatisticsCrumb(val categoryId: Long, val name: String)
+
 /**
  * 统计页的展示状态。
  *
@@ -36,6 +40,8 @@ data class StatisticsUiState(
     val canGoNext: Boolean = false,
     val customRange: Pair<LocalDate, LocalDate>? = null,
     val summary: StatsSummary? = null,
+    /** 下钻路径（自根分类到当前聚焦分类）；空表示根层。 */
+    val focusPath: List<StatisticsCrumb> = emptyList(),
 )
 
 /**
@@ -53,6 +59,9 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
 
     private val selectedCustomRange = MutableStateFlow<Pair<LocalDate, LocalDate>?>(null)
 
+    /** 下钻路径（分类 ID，自根到当前）；空表示根层。 */
+    private val focusPath = MutableStateFlow<List<Long>>(emptyList())
+
     /** 每 60 秒推进一次「现在」；本轮订阅结束后由 stateIn 自动停止。 */
     private val clock = flow {
         while (true) {
@@ -65,10 +74,17 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
         val mode: StatsMode,
         val anchor: LocalDate?,
         val customRange: Pair<LocalDate, LocalDate>?,
+        /** 下钻路径（分类 ID，根 → 当前）；空表示根层。 */
+        val focusPath: List<Long>,
     )
 
-    private val controls = combine(selectedMode, anchorDate, selectedCustomRange) { mode, anchor, customRange ->
-        Controls(mode, anchor, customRange)
+    private val controls = combine(
+        selectedMode,
+        anchorDate,
+        selectedCustomRange,
+        focusPath,
+    ) { mode, anchor, customRange, path ->
+        Controls(mode, anchor, customRange, path)
     }
 
     val uiState: StateFlow<StatisticsUiState> = combine(
@@ -80,6 +96,14 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
         val zone = DateTimeFormat.zone()
         val today = StatsWindows.dateOf(now, zone)
         val window = windowOf(control, today, zone)
+        val summary = StatsBuilder.build(
+            events = events,
+            tree = tree,
+            window = window,
+            now = now,
+            zone = zone,
+            rootId = control.focusPath.lastOrNull(),
+        )
         StatisticsUiState(
             isLoading = false,
             mode = window.mode,
@@ -87,7 +111,9 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
             label = statsLabel(window, now, zone),
             canGoNext = StatsWindows.shift(window, 1, zone).startAt <= now,
             customRange = control.customRange,
-            summary = StatsBuilder.build(events, tree, window, now, zone),
+            summary = summary,
+            // 分类被删除等情况下 build 会退回根层，面包屑跟随实际生效的聚焦分类。
+            focusPath = crumbPath(tree, summary.focusCategoryId),
         )
     }.stateIn(
         scope = viewModelScope,
@@ -103,6 +129,8 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
     fun selectMode(mode: StatsMode) {
         val zone = DateTimeFormat.zone()
         val today = StatsWindows.dateOf(System.currentTimeMillis(), zone)
+        // 切换查看方式时回到根层，避免停留在旧窗口层级下的空白下钻。
+        focusPath.value = emptyList()
         when (mode) {
             StatsMode.CUSTOM -> {
                 selectedMode.value = StatsMode.CUSTOM
@@ -134,6 +162,24 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
         applyWindow(target, zone)
     }
 
+    /** 进入某个分类的直接下一级；点击行时只会传入当前层可下钻的分类。 */
+    fun drillInto(categoryId: Long) {
+        focusPath.value = focusPath.value + categoryId
+    }
+
+    /** 返回上一级分类；已在根层时不动。 */
+    fun drillUp() {
+        if (focusPath.value.isEmpty()) return
+        focusPath.value = focusPath.value.dropLast(1)
+    }
+
+    /** 跳到面包屑的第 [level] 层（0 = 根层，n = 保留前 n 级）。 */
+    fun focusAt(level: Int) {
+        val target = level.coerceIn(0, focusPath.value.size)
+        if (target == focusPath.value.size) return
+        focusPath.value = focusPath.value.take(target)
+    }
+
     /** 设置自定义时间段（闭区间，含首尾两天）；结束早于起始时自动交换。 */
     fun setCustomRange(start: LocalDate, end: LocalDate) {
         val first = if (end.isBefore(start)) end else start
@@ -143,8 +189,16 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
         anchorDate.value = first
     }
 
-    private fun currentWindow(zone: ZoneId, today: LocalDate): StatsWindow =
-        windowOf(Controls(selectedMode.value, anchorDate.value, selectedCustomRange.value), today, zone)
+    private fun currentWindow(zone: ZoneId, today: LocalDate): StatsWindow = windowOf(
+        Controls(
+            mode = selectedMode.value,
+            anchor = anchorDate.value,
+            customRange = selectedCustomRange.value,
+            focusPath = focusPath.value,
+        ),
+        today,
+        zone,
+    )
 
     private fun windowOf(control: Controls, today: LocalDate, zone: ZoneId): StatsWindow =
         when (control.mode) {
@@ -217,6 +271,18 @@ private fun dayLabel(date: LocalDate, today: LocalDate): String {
         fullDayMonthWeekdayFormatter.format(date)
     }
     return if (date == today) "今天 · $text" else text
+}
+
+/** 聚焦分类到根的分类链；[categoryId] 为 null（根层）或分类已不存在时返回空。 */
+private fun crumbPath(tree: CategoryTree, categoryId: Long?): List<StatisticsCrumb> {
+    if (categoryId == null) return emptyList()
+    val trail = mutableListOf<StatisticsCrumb>()
+    var current = tree.find(categoryId)
+    while (current != null) {
+        trail.add(0, StatisticsCrumb(current.category.id, current.category.name))
+        current = current.category.parentId?.let(tree::find)
+    }
+    return trail
 }
 
 private fun rangeLabel(start: LocalDate, end: LocalDate): String =

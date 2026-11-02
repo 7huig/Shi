@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -194,13 +194,13 @@ private fun TimelineList(
             item(key = "day-${day.date}") {
                 DayHeader(day = day)
             }
-            items(
+            itemsIndexed(
                 items = day.segments,
-                key = { segment ->
+                key = { _, segment ->
                     "seg-${day.date}-${segment.startAt}-" +
                         segment.events.joinToString(",") { it.event.id.toString() }
                 },
-            ) { segment ->
+            ) { index, segment ->
                 TimelineSegmentRow(
                     segment = segment,
                     uncategorizedName = uncategorizedName,
@@ -208,6 +208,7 @@ private fun TimelineList(
                     onEventClick = onEventClick,
                     onEventLongClick = onEventLongClick,
                     onFillGap = { onFillGap(segment.startAt, segment.endAt) },
+                    centerTimeLabel = index > 0,
                 )
             }
             if (day.isToday) {

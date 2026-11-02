@@ -100,6 +100,7 @@ object StatsWindows {
  *
  * 环形图只画前 [StatsBuilder.MAX_DEPTH] 层，[children] 也按此截断；
  * 更深的分类时长已计入所属祖先的 [millis]。
+ * 下钻时 [depth] 相对当前聚焦分类从 0 重新计数。
  */
 data class CategoryUsage(
     val categoryId: Long,
@@ -130,6 +131,13 @@ data class StatsSummary(
     val roots: List<CategoryUsage>,
     /** 等长同模式上一个窗口的总时长（对齐已过时长，见 [StatsBuilder.build]）。 */
     val previousTotalMillis: Long,
+    /**
+     * 下钻聚焦的分类 ID；null 表示根层（全部分类）。
+     *
+     * 聚焦时 [totalMillis]、[eventCount]、[previousTotalMillis] 都换成该分类子树的口径，
+     * [roots] 是它的直接子分类（depth 从 0 重新计数），tree 中不存在的分类不参与下钻统计。
+     */
+    val focusCategoryId: Long? = null,
 )
 
 /**
@@ -149,12 +157,20 @@ object StatsBuilder {
     private const val PATH_SEPARATOR = " / "
     private const val UNKNOWN_NAME = "未分类"
 
+    /**
+     * 把事件列表聚合成 [StatsSummary]。
+     *
+     * [rootId] 为 null 时统计全部分类（旧行为）；传入分类 ID 时下钻到该分类的「下一级」：
+     * 总量、记录数与环比都只算该分类子树，[StatsSummary.roots] 换成它的直接子分类。
+     * [rootId] 在 [tree] 中找不到时按根层处理，避免界面停留在空白的下钻状态。
+     */
     fun build(
         events: List<TimelineEvent>,
         tree: CategoryTree,
         window: StatsWindow,
         now: Long,
         zone: ZoneId,
+        rootId: Long? = null,
     ): StatsSummary {
         val current = aggregate(clip(events, window.startAt, minOf(window.endAt, now)), tree)
         val previousWindow = previousWindowOf(window, now, zone)
@@ -166,16 +182,33 @@ object StatsBuilder {
         val currentTotals = subtreeTotals(tree, current)
         val previousTotals = subtreeTotals(tree, previous)
 
-        val roots = tree.roots
+        val focus = rootId?.let(tree::find)
+        if (focus == null) {
+            val roots = tree.roots
+                .mapNotNull { node -> usageOf(node, 0, currentTotals, previousTotals) }
+                .sortedWith(USAGE_ORDER)
+
+            return StatsSummary(
+                window = window,
+                totalMillis = current.totalMillis,
+                eventCount = current.eventCount,
+                roots = roots + orphanUsages(current, previous),
+                previousTotalMillis = previous.totalMillis,
+            )
+        }
+
+        // 下钻：环图与列表都从聚焦分类的直接子分类开始，层级深度归零。
+        val childRoots = focus.children
             .mapNotNull { node -> usageOf(node, 0, currentTotals, previousTotals) }
             .sortedWith(USAGE_ORDER)
 
         return StatsSummary(
             window = window,
-            totalMillis = current.totalMillis,
-            eventCount = current.eventCount,
-            roots = roots + orphanUsages(current, previous),
-            previousTotalMillis = previous.totalMillis,
+            totalMillis = currentTotals.millis[focus.category.id] ?: 0L,
+            eventCount = currentTotals.counts[focus.category.id] ?: 0,
+            roots = childRoots,
+            previousTotalMillis = previousTotals.millis[focus.category.id] ?: 0L,
+            focusCategoryId = focus.category.id,
         )
     }
 
