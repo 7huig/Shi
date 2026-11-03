@@ -1,5 +1,6 @@
 package io.github.huig7.shi.ui.record
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -28,6 +28,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -90,7 +91,17 @@ fun RecordSheet(
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = { BottomSheetDefaults.DragHandle() },
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
     ) {
+        // 必须在 BottomSheet 的 Dialog composition 内接管返回，Activity 外的 Handler 拦不到它。
+        BackHandler(
+            enabled = !showDiscardConfirmation &&
+                !showDeleteConfirmation &&
+                state.pendingOverwrite.isEmpty() &&
+                picker == null,
+        ) {
+            requestDismiss()
+        }
         if (state.isLoading) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -324,49 +335,61 @@ private fun TimeField(
     supportingText: String? = null,
 ) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(36.dp),
-            )
+        Row {
+            Box(
+                modifier = Modifier.width(36.dp).height(48.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Surface(
                 onClick = onDateClick,
-                modifier = Modifier.heightIn(min = 48.dp),
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             ) {
-                Text(
-                    text = DateTimeFormat.dateWithWeekday(date),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 13.dp),
-                )
+                Box(
+                    modifier = Modifier.height(48.dp).padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = DateTimeFormat.dateWithWeekday(date),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
-            Surface(
-                onClick = onTimeClick,
-                modifier = Modifier.heightIn(min = 48.dp),
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-            ) {
-                Text(
-                    text = DateTimeFormat.clock(time),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                )
+            Column {
+                Surface(
+                    onClick = onTimeClick,
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                ) {
+                    Box(
+                        modifier = Modifier.height(48.dp).padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = DateTimeFormat.clock(time),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                supportingText?.let { duration ->
+                    Text(
+                        text = duration,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
             }
-        }
-        supportingText?.let { duration ->
-            Text(
-                text = duration,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 36.dp, top = 3.dp),
-            )
         }
     }
 }

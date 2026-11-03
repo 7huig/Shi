@@ -29,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -82,7 +81,6 @@ fun TimelineSegmentRow(
     centerTimeLabel: Boolean = true,
 ) {
     val height = rememberBlockHeight(segment)
-    val hairline = MaterialTheme.colorScheme.outlineVariant
     var labelHeightPx by remember { mutableIntStateOf(0) }
     val gapHalfPx = with(androidx.compose.ui.platform.LocalDensity.current) { 3.dp.roundToPx() }
     Row(
@@ -113,16 +111,7 @@ fun TimelineSegmentRow(
                     ),
             )
         }
-        androidx.compose.foundation.Canvas(modifier = Modifier.width(6.dp).height(height)) {
-            val y = if (centerTimeLabel) 0f else 8.dp.toPx()
-            drawLine(
-                color = hairline,
-                start = Offset(0f, y),
-                end = Offset(size.width, y),
-                strokeWidth = 1.dp.toPx(),
-            )
-        }
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(10.dp))
 
         val blockModifier = Modifier
             .weight(1f)

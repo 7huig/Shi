@@ -39,10 +39,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -125,7 +125,7 @@ fun StatisticsScreen(
     val summary = state.summary
     var pickerStep by remember { mutableStateOf<DatePickerStep?>(null) }
     var pendingStart by remember { mutableStateOf<LocalDate?>(null) }
-    // 窗口或下钻层级改变时立即回到总览，summary 更新时也不沿用旧弧段。
+    // 窗口或下钻层级改变时立即回到总览；普通数据刷新保留当前选中。
     var selectedRingPath by remember(state.window, state.focusPath) {
         mutableStateOf<List<Int>?>(null)
     }
@@ -173,9 +173,6 @@ fun StatisticsScreen(
                 val segments = remember(summary) { buildRingSegments(summary.roots) }
                 val selectedSegment = selectedRingPath?.let { path ->
                     segments.firstOrNull { it.path == path }
-                }
-                LaunchedEffect(summary) {
-                    selectedRingPath = null
                 }
                 RingSection(
                     summary = summary,
@@ -352,6 +349,7 @@ private fun RingSection(
     val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
     val isEmpty = summary.totalMillis <= 0L
     val minimumTouchRadius = with(LocalDensity.current) { 24.dp.toPx() }
+    val currentOnSegmentSelected by rememberUpdatedState(onSegmentSelected)
 
     Column(
         modifier = Modifier
@@ -378,7 +376,7 @@ private fun RingSection(
                                     segments = segments,
                                     minimumTouchRadius = minimumTouchRadius,
                                 )
-                                onSegmentSelected(hit?.path)
+                                currentOnSegmentSelected(hit?.path)
                             }
                         }
                     }
@@ -389,7 +387,7 @@ private fun RingSection(
                             CustomAccessibilityAction(
                                 label = "选择${segment.usage.name}，第${segment.layer + 1}层",
                             ) {
-                                onSegmentSelected(segment.path)
+                                currentOnSegmentSelected(segment.path)
                                 true
                             }
                         }
@@ -646,16 +644,22 @@ private fun CategoryUsageRow(
                 maxLines = 1,
             )
             if (onDrill != null) {
-                IconButton(
-                    onClick = { onDrill(usage.categoryId) },
-                    modifier = Modifier.size(48.dp),
+                // 保留 48dp 触控区域，但不让按钮撑高文字行，避免比例条被向下推。
+                Box(
+                    modifier = Modifier.width(48.dp).height(24.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                        contentDescription = "查看${usage.name}的下一级分类",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    IconButton(
+                        onClick = { onDrill(usage.categoryId) },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = "查看${usage.name}的下一级分类",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
