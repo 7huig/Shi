@@ -145,7 +145,7 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
         }
     }
 
-    /** 上一个周期；自定义窗口按窗口长度平移。 */
+    /** 上一个周期；自定义窗口按本地日历天数平移。 */
     fun goPrevious() {
         val zone = DateTimeFormat.zone()
         val today = StatsWindows.dateOf(System.currentTimeMillis(), zone)

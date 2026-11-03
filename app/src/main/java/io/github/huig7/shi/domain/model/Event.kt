@@ -8,6 +8,8 @@ data class Event(
     val categoryId: Long,
     val createdAt: Long,
     val updatedAt: Long,
+    /** 跨导入导出保持稳定的全局身份；数据库自增 ID 只用于本地查询。 */
+    val uuid: String = "",
 ) {
     /** 时长毫秒，永远落在 [60_000, ...] 里，避免脏数据产生零宽 / 负宽事件。 */
     val durationMillis: Long get() = (endAt - startAt).coerceAtLeast(60_000L)

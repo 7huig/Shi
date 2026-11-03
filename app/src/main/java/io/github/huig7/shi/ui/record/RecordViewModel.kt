@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import io.github.huig7.shi.data.repository.SaveEventResult
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.OverlapPlan
 import io.github.huig7.shi.domain.model.CategoryTree
@@ -15,6 +16,7 @@ import io.github.huig7.shi.util.DateTimeFormat
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,9 +35,13 @@ data class RecordUiState(
     val tree: CategoryTree = CategoryTree(),
     val selectedCategoryId: Long? = null,
     val timeError: Boolean = false,
+    val isLoading: Boolean = false,
+    val isReady: Boolean = false,
     val isSaving: Boolean = false,
     val saved: Boolean = false,
-    /** 会被目标区间整段盖住、需要用户确认的已有记录；非空时由 RecordSheet 弹确认框。 */
+    val errorMessage: String? = null,
+    val isDirty: Boolean = false,
+    val timeDirty: Boolean = false,
     val pendingOverwrite: List<Event> = emptyList(),
 )
 
@@ -45,8 +51,9 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
     val uiState: StateFlow<RecordUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
-
-    /** 等用户确认「仍要保存」的落库参数；确认后按同一份 [OverlapPlan] 真正写入。 */
+    private var saveJob: Job? = null
+    private var activeTarget: EditorTarget? = null
+    private var sessionCounter = 0L
     private var pendingSave: PendingSave? = null
 
     init {
@@ -62,27 +69,31 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
     }
 
     fun start(target: EditorTarget) {
+        // 同一会话在旋转等配置变更后仍然保留，不能重复初始化草稿。
+        if (activeTarget == target) return
         loadJob?.cancel()
+        saveJob?.cancel()
         pendingSave = null
-        _uiState.update {
-            it.copy(
-                isSaving = false,
-                saved = false,
-                timeError = false,
-                pendingOverwrite = emptyList(),
+        activeTarget = target
+        val session = ++sessionCounter
+        _uiState.update { current ->
+            RecordUiState(
+                tree = current.tree,
+                selectedCategoryId = current.selectedCategoryId,
+                isLoading = true,
             )
         }
         when (target) {
-            is EditorTarget.New -> startNew(target)
-            is EditorTarget.Edit -> startEdit(target.eventId)
+            is EditorTarget.New -> startNew(target, session)
+            is EditorTarget.Edit -> startEdit(target.eventId, session)
         }
     }
 
-    private fun startNew(prefill: EditorTarget.New) {
+    private fun startNew(prefill: EditorTarget.New, session: Long) {
         if (prefill.startAt != null && prefill.endAt != null && prefill.endAt > prefill.startAt) {
             val startLocal = DateTimeFormat.toLocalDateTime(prefill.startAt)
             val endLocal = DateTimeFormat.toLocalDateTime(prefill.endAt)
-            _uiState.update {
+            updateSession(session) {
                 it.copy(
                     isEditing = false,
                     eventId = null,
@@ -91,18 +102,19 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
                     startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
                     endDate = endLocal.toLocalDate(),
                     endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
-                    timeError = false,
+                    isLoading = false,
+                    isReady = true,
                 )
             }
             return
         }
-        startNewNow()
+        startNewNow(session)
     }
 
-    private fun startNewNow() {
+    private fun startNewNow(session: Long) {
         val now = LocalDateTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0)
         val fallbackStart = now.minusMinutes(30)
-        _uiState.update {
+        updateSession(session) {
             it.copy(
                 isEditing = false,
                 eventId = null,
@@ -111,57 +123,104 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
                 startTime = fallbackStart.toLocalTime(),
                 endDate = now.toLocalDate(),
                 endTime = now.toLocalTime(),
-                timeError = false,
             )
         }
         loadJob = viewModelScope.launch {
-            val nowMillis = DateTimeFormat.toEpochMillis(now.toLocalDate(), now.toLocalTime())
-            val lastEnd = repository.latestEventEnd()
-            // 接着上次记录继续：上一次结束在 12 小时内，就用它作为开始；否则回退到「半小时前」。
-            val startMillis = if (lastEnd in (nowMillis - 12 * 3_600_000L)..(nowMillis - 60_000L)) {
-                lastEnd
-            } else {
-                nowMillis - 30 * 60_000L
-            }
-            val startLocal = DateTimeFormat.toLocalDateTime(startMillis)
-            _uiState.update {
-                it.copy(
-                    startDate = startLocal.toLocalDate(),
-                    startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
-                    endDate = now.toLocalDate(),
-                    endTime = now.toLocalTime(),
-                )
+            try {
+                val nowMillis = DateTimeFormat.toEpochMillis(now.toLocalDate(), now.toLocalTime())
+                val lastEnd = repository.latestEventEnd()
+                val startMillis = if (lastEnd in (nowMillis - 12 * 3_600_000L)..(nowMillis - 60_000L)) {
+                    lastEnd
+                } else {
+                    nowMillis - 30 * 60_000L
+                }
+                val startLocal = DateTimeFormat.toLocalDateTime(startMillis)
+                updateSession(session) { state ->
+                    if (state.timeDirty) {
+                        state.copy(isLoading = false, isReady = true)
+                    } else {
+                        state.copy(
+                            startDate = startLocal.toLocalDate(),
+                            startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
+                            endDate = now.toLocalDate(),
+                            endTime = now.toLocalTime(),
+                            isLoading = false,
+                            isReady = true,
+                        )
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // 自动续接失败时保留半小时前的可用默认值。
+                updateSession(session) { it.copy(isLoading = false, isReady = true) }
             }
         }
     }
 
-    private fun startEdit(eventId: Long) {
+    private fun startEdit(eventId: Long, session: Long) {
+        updateSession(session) { it.copy(isEditing = true, eventId = eventId) }
         loadJob = viewModelScope.launch {
-            val event = repository.getEvent(eventId) ?: return@launch
-            val startLocal = DateTimeFormat.toLocalDateTime(event.startAt)
-            val endLocal = DateTimeFormat.toLocalDateTime(event.endAt)
-            _uiState.update {
-                it.copy(
-                    isEditing = true,
-                    eventId = event.id,
-                    note = event.note.orEmpty(),
-                    startDate = startLocal.toLocalDate(),
-                    startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
-                    endDate = endLocal.toLocalDate(),
-                    endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
-                    selectedCategoryId = event.categoryId,
-                    timeError = false,
-                )
+            try {
+                val event = repository.getEvent(eventId)
+                if (event == null) {
+                    updateSession(session) {
+                        it.copy(
+                            isLoading = false,
+                            isReady = false,
+                            errorMessage = "记录已不存在，请关闭后重试",
+                        )
+                    }
+                    return@launch
+                }
+                val startLocal = DateTimeFormat.toLocalDateTime(event.startAt)
+                val endLocal = DateTimeFormat.toLocalDateTime(event.endAt)
+                updateSession(session) {
+                    it.copy(
+                        isEditing = true,
+                        eventId = event.id,
+                        note = event.note.orEmpty(),
+                        startDate = startLocal.toLocalDate(),
+                        startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
+                        endDate = endLocal.toLocalDate(),
+                        endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
+                        selectedCategoryId = event.categoryId,
+                        isLoading = false,
+                        isReady = true,
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                updateSession(session) {
+                    it.copy(
+                        isLoading = false,
+                        isReady = false,
+                        errorMessage = "记录加载失败，请关闭后重试",
+                    )
+                }
             }
         }
     }
 
     fun onNoteChange(value: String) {
-        _uiState.update { it.copy(note = value) }
+        _uiState.update { state ->
+            if (value == state.note) state else state.copy(
+                note = value,
+                isDirty = true,
+                errorMessage = null,
+            )
+        }
     }
 
     fun onCategorySelected(categoryId: Long) {
-        _uiState.update { it.copy(selectedCategoryId = categoryId) }
+        _uiState.update { state ->
+            if (categoryId == state.selectedCategoryId) state else state.copy(
+                selectedCategoryId = categoryId,
+                isDirty = true,
+                errorMessage = null,
+            )
+        }
     }
 
     fun onStartDateSelected(date: LocalDate) = updateStart(date, _uiState.value.startTime)
@@ -169,47 +228,52 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
     fun onStartTimeSelected(time: LocalTime) =
         updateStart(_uiState.value.startDate, time.withSecond(0).withNano(0))
 
-    /**
-     * 改开始时间时顺手把结束时间推到「开始 + 30 分钟」，避免出现负区间；
-     * 改结束时间不做自动纠正，交给保存时的校验提示。
-     */
     private fun updateStart(date: LocalDate, time: LocalTime) {
         _uiState.update { state ->
             val startMillis = DateTimeFormat.toEpochMillis(date, time)
             val endMillis = DateTimeFormat.toEpochMillis(state.endDate, state.endTime)
-            if (endMillis <= startMillis) {
+            val updated = if (endMillis <= startMillis) {
                 val endLocal = DateTimeFormat.toLocalDateTime(startMillis + 30 * 60_000L)
                 state.copy(
                     startDate = date,
                     startTime = time,
                     endDate = endLocal.toLocalDate(),
                     endTime = endLocal.toLocalTime(),
-                    timeError = false,
                 )
             } else {
-                state.copy(startDate = date, startTime = time, timeError = false)
+                state.copy(startDate = date, startTime = time)
             }
+            updated.copy(isDirty = true, timeDirty = true, timeError = false, errorMessage = null)
         }
     }
 
     fun onEndDateSelected(date: LocalDate) {
-        _uiState.update { it.copy(endDate = date, timeError = false) }
+        _uiState.update {
+            it.copy(
+                endDate = date,
+                isDirty = true,
+                timeDirty = true,
+                timeError = false,
+                errorMessage = null,
+            )
+        }
     }
 
     fun onEndTimeSelected(time: LocalTime) {
         _uiState.update {
-            it.copy(endTime = time.withSecond(0).withNano(0), timeError = false)
+            it.copy(
+                endTime = time.withSecond(0).withNano(0),
+                isDirty = true,
+                timeDirty = true,
+                timeError = false,
+                errorMessage = null,
+            )
         }
     }
 
-    /**
-     * 保存：先查重叠并算出让路方案。
-     * - 只有单侧裁剪 / 拆分（updates / clones）时静默生效；
-     * - 有整段被盖住的记录（victims）时先挂起，等用户在确认框里点「仍要保存」再落库。
-     */
     fun save() {
         val state = _uiState.value
-        if (state.isSaving || pendingSave != null) return
+        if (!state.isReady || state.isSaving || pendingSave != null) return
         val categoryId = state.selectedCategoryId ?: return
         val startAt = DateTimeFormat.toEpochMillis(state.startDate, state.startTime)
         val endAt = DateTimeFormat.toEpochMillis(state.endDate, state.endTime)
@@ -217,82 +281,131 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
             _uiState.update { it.copy(timeError = true) }
             return
         }
-        _uiState.update { it.copy(isSaving = true, timeError = false) }
-        viewModelScope.launch {
-            runCatching {
-                // 契约：getOverlappingEvents(startAt, endAt, excludeId)
-                val others = repository.getOverlappingEvents(
-                    startAt,
-                    endAt,
-                    state.eventId ?: -1L,
-                )
+        val session = sessionCounter
+        val pending = PendingSave(
+            session = session,
+            id = state.eventId,
+            note = state.note,
+            startAt = startAt,
+            endAt = endAt,
+            categoryId = categoryId,
+            plan = null,
+        )
+        _uiState.update { it.copy(isSaving = true, timeError = false, errorMessage = null) }
+        saveJob = viewModelScope.launch {
+            try {
+                val others = repository.getOverlappingEvents(startAt, endAt, state.eventId ?: -1L)
+                if (!isCurrent(session)) return@launch
                 val plan = resolveOverlap(startAt, endAt, others)
                 if (plan.victims.isNotEmpty()) {
-                    pendingSave = PendingSave(
-                        id = state.eventId,
-                        note = state.note,
-                        startAt = startAt,
-                        endAt = endAt,
-                        categoryId = categoryId,
-                        plan = plan,
-                    )
-                    _uiState.update {
+                    pendingSave = pending.copy(plan = plan)
+                    updateSession(session) {
                         it.copy(isSaving = false, pendingOverwrite = plan.victims)
                     }
                 } else {
-                    // 契约：saveEventResolved(id, note, startAt, endAt, categoryId, plan)
-                    repository.saveEventResolved(
-                        state.eventId,
-                        state.note,
-                        startAt,
-                        endAt,
-                        categoryId,
-                        plan,
+                    val result = repository.saveEventResolved(
+                        id = pending.id,
+                        note = pending.note,
+                        startAt = pending.startAt,
+                        endAt = pending.endAt,
+                        categoryId = pending.categoryId,
+                        plan = plan,
                     )
-                    _uiState.update { it.copy(isSaving = false, saved = true) }
+                    handleSaveResult(result, session)
                 }
-            }.onFailure {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
                 pendingSave = null
-                _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
+                updateSession(session) {
+                    it.copy(
+                        isSaving = false,
+                        pendingOverwrite = emptyList(),
+                        errorMessage = "保存失败，请重试",
+                    )
+                }
             }
         }
     }
 
-    /** 重叠确认框里点「仍要保存」：按挂起时的方案真正写入，victims 会被删除。 */
     fun confirmOverwrite() {
         val pending = pendingSave ?: return
-        if (_uiState.value.isSaving) return
-        _uiState.update { it.copy(isSaving = true) }
-        viewModelScope.launch {
-            runCatching {
-                repository.saveEventResolved(
-                    pending.id,
-                    pending.note,
-                    pending.startAt,
-                    pending.endAt,
-                    pending.categoryId,
-                    pending.plan,
+        if (_uiState.value.isSaving || pending.session != sessionCounter) return
+        val plan = pending.plan ?: return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
+        saveJob = viewModelScope.launch {
+            try {
+                val result = repository.saveEventResolved(
+                    id = pending.id,
+                    note = pending.note,
+                    startAt = pending.startAt,
+                    endAt = pending.endAt,
+                    categoryId = pending.categoryId,
+                    plan = plan,
                 )
-            }.onSuccess {
-                pendingSave = null
-                _uiState.update {
-                    it.copy(isSaving = false, saved = true, pendingOverwrite = emptyList())
+                handleSaveResult(result, pending.session)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // 保留确认上下文，允许直接重试。
+                updateSession(pending.session) {
+                    it.copy(isSaving = false, errorMessage = "保存失败，请重试")
                 }
-            }.onFailure {
-                pendingSave = null
-                _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
             }
         }
     }
 
-    /** 重叠确认框里点「取消」：放弃这次保存，回到编辑状态。 */
+    private fun handleSaveResult(result: SaveEventResult, session: Long) {
+        when (result) {
+            is SaveEventResult.Saved -> {
+                pendingSave = null
+                updateSession(session) {
+                    it.copy(
+                        isSaving = false,
+                        saved = true,
+                        pendingOverwrite = emptyList(),
+                        errorMessage = null,
+                    )
+                }
+            }
+
+            SaveEventResult.EventNotFound -> {
+                pendingSave = null
+                updateSession(session) {
+                    it.copy(
+                        isSaving = false,
+                        isReady = false,
+                        pendingOverwrite = emptyList(),
+                        errorMessage = "记录已不存在，请关闭后重试",
+                    )
+                }
+            }
+
+            SaveEventResult.OverlapChanged -> {
+                pendingSave = null
+                updateSession(session) {
+                    it.copy(
+                        isSaving = false,
+                        pendingOverwrite = emptyList(),
+                        errorMessage = "重叠记录已变化，请重新保存",
+                    )
+                }
+            }
+        }
+    }
+
     fun dismissOverwrite() {
         pendingSave = null
-        _uiState.update { it.copy(isSaving = false, pendingOverwrite = emptyList()) }
+        _uiState.update {
+            it.copy(isSaving = false, pendingOverwrite = emptyList(), errorMessage = null)
+        }
     }
 
     fun reset() {
+        activeTarget = null
+        sessionCounter++
         loadJob?.cancel()
+        saveJob?.cancel()
         pendingSave = null
         _uiState.update { current ->
             RecordUiState(
@@ -302,20 +415,28 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
         }
     }
 
+    private fun isCurrent(session: Long): Boolean =
+        activeTarget != null && session == sessionCounter
+
+    private fun updateSession(session: Long, transform: (RecordUiState) -> RecordUiState) {
+        if (!isCurrent(session)) return
+        _uiState.update(transform)
+    }
+
     private fun defaultCategoryId(tree: CategoryTree): Long? {
-        // 默认落在第一个叶子分类（工作 / 执行）上，方便快速连记。
         return tree.flatten().firstOrNull { it.first.children.isEmpty() }
             ?.first?.category?.id
             ?: tree.roots.firstOrNull()?.category?.id
     }
 
     private data class PendingSave(
+        val session: Long,
         val id: Long?,
         val note: String?,
         val startAt: Long,
         val endAt: Long,
         val categoryId: Long,
-        val plan: OverlapPlan,
+        val plan: OverlapPlan?,
     )
 
     companion object {

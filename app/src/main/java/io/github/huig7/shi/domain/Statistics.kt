@@ -7,6 +7,7 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 
 /** 统计页的 5 种查看方式：日 / 周 / 月 / 年 / 自定义。 */
@@ -62,7 +63,7 @@ object StatsWindows {
     /**
      * 前后平移 [steps] 个周期（负数向前）。
      *
-     * DAY / WEEK / MONTH / YEAR 按窗口起始日做日历加减，CUSTOM 按窗口长度（毫秒）平移。
+     * DAY / WEEK / MONTH / YEAR 按窗口起始日做日历加减，CUSTOM 按本地日历天数平移。
      */
     fun shift(window: StatsWindow, steps: Int, zone: ZoneId): StatsWindow {
         if (steps == 0) return window
@@ -72,9 +73,16 @@ object StatsWindows {
             StatsMode.MONTH -> of(StatsMode.MONTH, dateOf(window.startAt, zone).plusMonths(steps.toLong()), zone)
             StatsMode.YEAR -> of(StatsMode.YEAR, dateOf(window.startAt, zone).plusYears(steps.toLong()), zone)
             StatsMode.CUSTOM -> {
-                val length = window.endAt - window.startAt
-                val start = window.startAt + length * steps
-                StatsWindow(StatsMode.CUSTOM, start, start + length)
+                val startDate = dateOf(window.startAt, zone)
+                val endDate = dateOf(window.endAt - 1L, zone).plusDays(1)
+                val days = ChronoUnit.DAYS.between(startDate, endDate)
+                val shiftedStart = startDate.plusDays(days * steps)
+                val shiftedEnd = endDate.plusDays(days * steps)
+                StatsWindow(
+                    mode = StatsMode.CUSTOM,
+                    startAt = startOfDay(shiftedStart, zone),
+                    endAt = startOfDay(shiftedEnd, zone),
+                )
             }
         }
     }

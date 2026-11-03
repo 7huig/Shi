@@ -109,6 +109,10 @@ private fun TimeLogApp(repository: TimeLogRepository) {
     var overlay by rememberSaveable { mutableStateOf<String?>(null) }
     val editorTarget = homeState.editor
     val currentPage = pagerState.currentPage
+    val closeEditor = {
+        homeViewModel.closeRecord()
+        recordViewModel.reset()
+    }
 
     LaunchedEffect(editorTarget) {
         editorTarget?.let(recordViewModel::start)
@@ -116,8 +120,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
 
     LaunchedEffect(recordState.saved) {
         if (recordState.saved) {
-            homeViewModel.closeRecord()
-            recordViewModel.reset()
+            closeEditor()
         }
     }
 
@@ -209,7 +212,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
     if (editorTarget != null) {
         RecordSheet(
             state = recordState,
-            onDismiss = homeViewModel::closeRecord,
+            onDismiss = closeEditor,
             onNoteChange = recordViewModel::onNoteChange,
             onCategorySelected = recordViewModel::onCategorySelected,
             onStartDateSelected = recordViewModel::onStartDateSelected,
@@ -217,6 +220,12 @@ private fun TimeLogApp(repository: TimeLogRepository) {
             onEndDateSelected = recordViewModel::onEndDateSelected,
             onEndTimeSelected = recordViewModel::onEndTimeSelected,
             onSave = recordViewModel::save,
+            onDelete = {
+                recordState.eventId?.let { eventId ->
+                    homeViewModel.deleteEvent(eventId)
+                    closeEditor()
+                }
+            },
             onConfirmOverwrite = recordViewModel::confirmOverwrite,
             onCancelOverwrite = recordViewModel::dismissOverwrite,
         )
@@ -251,7 +260,7 @@ private fun AppHeader(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .clickable { onSelectPage(PAGE_TIMELINE) }
-                .padding(horizontal = 2.dp, vertical = 2.dp),
+                .padding(horizontal = 4.dp, vertical = 10.dp),
         )
         Spacer(Modifier.width(16.dp))
         Text(
@@ -261,7 +270,7 @@ private fun AppHeader(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .clickable { onSelectPage(PAGE_STATS) }
-                .padding(horizontal = 2.dp, vertical = 2.dp),
+                .padding(horizontal = 4.dp, vertical = 10.dp),
         )
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onSearch) {

@@ -37,11 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import io.github.huig7.shi.ui.theme.ActionBlue
 import io.github.huig7.shi.ui.theme.Clay
 import io.github.huig7.shi.util.DateTimeFormat
 
@@ -106,7 +104,7 @@ fun TimelinePage(
 }
 
 /**
- * 时间轴页右下角的悬浮加号：蓝底圆圈 + 白色「+」，点击新建记录。
+ * 时间轴页右下角的悬浮加号：主题主色圆圈 + 对应前景色「+」，点击新建记录。
  * 由外壳（MainActivity）叠加在时间轴页之上；列表底部已预留 96dp，避免遮住最后一条记录。
  */
 @Composable
@@ -120,16 +118,16 @@ fun TimelineFabOverlay(onNewRecord: () -> Unit, modifier: Modifier = Modifier) {
                 .padding(end = 24.dp, bottom = 24.dp)
                 .navigationBarsPadding()
                 .size(62.dp)
-                .shadow(8.dp, CircleShape)
+                .shadow(4.dp, CircleShape)
                 .clip(CircleShape)
-                .background(ActionBlue)
+                .background(MaterialTheme.colorScheme.primary)
                 .clickable(role = Role.Button, onClick = onNewRecord),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Rounded.Add,
                 contentDescription = "新建记录",
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(30.dp),
             )
         }

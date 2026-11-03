@@ -11,10 +11,11 @@ import io.github.huig7.shi.data.local.dao.EventDao
 import io.github.huig7.shi.data.local.entity.CategoryEntity
 import io.github.huig7.shi.data.local.entity.EventEntity
 import io.github.huig7.shi.data.seed.DefaultCategories
+import java.util.UUID
 
 @Database(
     entities = [CategoryEntity::class, EventEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,7 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "time-log.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .addCallback(SeedCallback())
                 .build()
 
@@ -120,6 +121,25 @@ abstract class AppDatabase : RoomDatabase() {
                     "UPDATE category SET colorHex = ? WHERE id = ? AND colorHex = ?",
                     arrayOf<Any?>(newColor, id, oldColor),
                 )
+            }
+        }
+
+        /** v5 为事件增加跨设备稳定的 UUID，用于合并导入时识别同一条记录。 */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE event ADD COLUMN uuid TEXT NOT NULL DEFAULT ''")
+                val ids = buildList {
+                    db.query("SELECT id FROM event").use { cursor ->
+                        while (cursor.moveToNext()) add(cursor.getLong(0))
+                    }
+                }
+                ids.forEach { id ->
+                    db.execSQL(
+                        "UPDATE event SET uuid = ? WHERE id = ?",
+                        arrayOf<Any?>(UUID.randomUUID().toString(), id),
+                    )
+                }
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_event_uuid ON event(uuid)")
             }
         }
 

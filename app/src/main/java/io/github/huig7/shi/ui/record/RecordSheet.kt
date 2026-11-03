@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,26 +66,56 @@ fun RecordSheet(
     onEndDateSelected: (LocalDate) -> Unit,
     onEndTimeSelected: (LocalTime) -> Unit,
     onSave: () -> Unit,
+    onDelete: () -> Unit,
     onConfirmOverwrite: () -> Unit,
     onCancelOverwrite: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var picker by remember { mutableStateOf<PickerTarget?>(null) }
+    var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
+    val requestDismiss = {
+        if (state.isDirty) showDiscardConfirmation = true else onDismiss()
+    }
+    val startAt = DateTimeFormat.toEpochMillis(state.startDate, state.startTime)
+    val endAt = DateTimeFormat.toEpochMillis(state.endDate, state.endTime)
+    val durationLabel = if (endAt > startAt) {
+        "共 ${DateTimeFormat.durationText(endAt - startAt)}"
+    } else {
+        null
+    }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = requestDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = { BottomSheetDefaults.DragHandle() },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .imePadding()
-                .navigationBarsPadding()
-                .padding(start = 24.dp, end = 24.dp, bottom = 20.dp),
-        ) {
+        if (state.isLoading) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 40.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "正在加载…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(start = 24.dp, end = 24.dp, bottom = 20.dp),
+            ) {
             Text(
                 text = if (state.isEditing) "编辑记录" else "记录一段",
                 style = MaterialTheme.typography.titleLarge,
@@ -99,15 +131,18 @@ fun RecordSheet(
 
             Spacer(Modifier.height(16.dp))
             TimeField(
+                label = "开始",
                 date = state.startDate,
                 time = state.startTime,
                 onDateClick = { picker = PickerTarget.StartDate },
                 onTimeClick = { picker = PickerTarget.StartTime },
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(10.dp))
             TimeField(
+                label = "结束",
                 date = state.endDate,
                 time = state.endTime,
+                supportingText = durationLabel,
                 onDateClick = { picker = PickerTarget.EndDate },
                 onTimeClick = { picker = PickerTarget.EndTime },
             )
@@ -117,6 +152,14 @@ fun RecordSheet(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            state.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
 
@@ -134,11 +177,11 @@ fun RecordSheet(
 
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onDismiss) { Text("取消") }
+                TextButton(onClick = requestDismiss) { Text("取消") }
                 Spacer(Modifier.weight(1f))
                 Button(
                     onClick = onSave,
-                    enabled = !state.isSaving,
+                    enabled = state.isReady && !state.isSaving,
                     shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.height(48.dp).widthIn(min = 112.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -157,7 +200,66 @@ fun RecordSheet(
                     }
                 }
             }
+            if (state.isEditing && state.isReady) {
+                TextButton(
+                    onClick = { showDeleteConfirmation = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = "删除记录",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.82f),
+                    )
+                }
+            }
         }
+        }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("删除这段记录？") },
+            text = { Text("记录将被永久删除，此操作无法撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onDelete()
+                    },
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text("放弃未保存修改？") },
+            text = { Text("这次修改还没有保存，关闭后将无法恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardConfirmation = false
+                        onDismiss()
+                    },
+                ) {
+                    Text("放弃修改", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmation = false }) {
+                    Text("继续编辑")
+                }
+            },
+        )
     }
 
     // 保存时如果会整段盖掉已有记录，先让用户确认；单侧裁剪 / 拆分不需要打扰。
@@ -165,6 +267,7 @@ fun RecordSheet(
         OverlapConfirmDialog(
             victims = state.pendingOverwrite,
             isSaving = state.isSaving,
+            errorMessage = state.errorMessage,
             onConfirm = onConfirmOverwrite,
             onDismiss = onCancelOverwrite,
         )
@@ -213,36 +316,56 @@ fun RecordSheet(
 
 @Composable
 private fun TimeField(
+    label: String,
     date: LocalDate,
     time: LocalTime,
     onDateClick: () -> Unit,
     onTimeClick: () -> Unit,
+    supportingText: String? = null,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Surface(
-            onClick = onDateClick,
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        ) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = DateTimeFormat.dateWithWeekday(date),
-                style = MaterialTheme.typography.bodySmall,
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.width(36.dp),
             )
+            Surface(
+                onClick = onDateClick,
+                modifier = Modifier.heightIn(min = 48.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            ) {
+                Text(
+                    text = DateTimeFormat.dateWithWeekday(date),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 13.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                onClick = onTimeClick,
+                modifier = Modifier.heightIn(min = 48.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+            ) {
+                Text(
+                    text = DateTimeFormat.clock(time),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                )
+            }
         }
-        Spacer(Modifier.width(8.dp))
-        Surface(
-            onClick = onTimeClick,
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-        ) {
+        supportingText?.let { duration ->
             Text(
-                text = DateTimeFormat.clock(time),
-                style = MaterialTheme.typography.titleMedium,
+                text = duration,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.padding(start = 36.dp, top = 3.dp),
             )
         }
     }
@@ -328,11 +451,12 @@ private fun TimePickerDialog(
 private fun OverlapConfirmDialog(
     victims: List<Event>,
     isSaving: Boolean,
+    errorMessage: String?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSaving) onDismiss() },
         title = { Text("时间重叠") },
         text = {
             Column {
@@ -351,6 +475,14 @@ private fun OverlapConfirmDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+                errorMessage?.let { message ->
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         },

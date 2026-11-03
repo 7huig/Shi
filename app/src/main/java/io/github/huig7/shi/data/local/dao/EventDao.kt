@@ -18,6 +18,9 @@ interface EventDao {
     @Query("SELECT * FROM event WHERE id = :id")
     suspend fun getById(id: Long): EventEntity?
 
+    @Query("SELECT * FROM event WHERE uuid = :uuid")
+    suspend fun getByUuid(uuid: String): EventEntity?
+
     @Query("SELECT COALESCE(MAX(endAt), 0) FROM event")
     suspend fun latestEnd(): Long
 
@@ -49,7 +52,7 @@ interface EventDao {
 
     @Query(
         "SELECT * FROM event " +
-            "WHERE note IS NOT NULL AND note LIKE '%' || :query || '%' " +
+            "WHERE note IS NOT NULL AND instr(lower(note), lower(:query)) > 0 " +
             "ORDER BY startAt DESC, id DESC",
     )
     fun searchByNote(query: String): Flow<List<EventEntity>>

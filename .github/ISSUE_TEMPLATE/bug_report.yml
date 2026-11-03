@@ -1,0 +1,56 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 例如 0.2.1（versionCode 8）
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 设备与 Android 版本
+      description: 例如 Pixel 6，Android 12 / API 31
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 从打开应用开始，按顺序列出最小复现步骤。
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 观察到……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图或补充信息
+      description: 可附截图、录屏或日志。请勿上传含私人备注的 JSON 备份，敏感内容请先脱敏。
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 已使用最新 Release 复现，或说明为什么只能使用旧版本。
+          required: true
+        - label: 附件中没有私人备份、密码、密钥或未脱敏备注。
+          required: true

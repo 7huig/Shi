@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
@@ -129,7 +129,7 @@ fun TimelineSegmentRow(
             .height(height)
         if (segment.isUnrecorded) {
             // 空隙本身就是一段「未分类」时间：点它可以就地补记。
-            val fillable = if (onFillGap != null && segment.endAt - segment.startAt >= 60_000L) {
+            val fillable = if (onFillGap != null) {
                 blockModifier.combinedClickable(onClick = { onFillGap() }, onLongClick = {})
             } else {
                 blockModifier
@@ -172,9 +172,11 @@ private fun RecordedBlock(
 ) {
     val accent = Color(segment.events.first().categoryColor)
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val textColor = if (darkTheme) lerp(accent, Color.White, 0.35f) else accent
     val background = accent.copy(alpha = if (darkTheme) 0.20f else 0.09f)
     val border = accent.copy(alpha = if (darkTheme) 0.38f else 0.22f)
+    val height = rememberBlockHeight(segment)
+    val eventsHeight = recordedEventsHeight(segment)
+    val showDuration = height >= 96.dp && height >= eventsHeight + 28.dp
 
     Box(
         modifier = modifier
@@ -189,51 +191,70 @@ private fun RecordedBlock(
                 .background(accent.copy(alpha = if (darkTheme) 0.85f else 0.7f)),
         )
         Column(
-            modifier = Modifier.padding(start = 13.dp, top = 6.dp, end = 8.dp, bottom = 6.dp),
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(start = 13.dp, top = 6.dp, end = 8.dp, bottom = 6.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            segment.events.forEachIndexed { index, item ->
-                if (index > 0) {
-                    Spacer(Modifier.height(2.dp))
+            Column {
+                segment.events.forEachIndexed { index, item ->
+                    if (index > 0) {
+                        Spacer(Modifier.height(2.dp))
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(EventShape)
+                            .combinedClickable(
+                                onClick = { onEventClick(item.event.id) },
+                                onLongClick = { onEventLongClick(item.event.id) },
+                            )
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CategoryDot(colorHex = item.categoryColor, size = 6.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = item.categoryPath,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 16.sp,
+                                    lineHeight = 20.sp,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        item.event.note?.let { note ->
+                            Text(
+                                text = note,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 12.dp, top = 2.dp),
+                            )
+                        }
+                    }
                 }
-                Column(
+            }
+            if (showDuration) {
+                Text(
+                    text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    maxLines = 1,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(EventShape)
-                        .combinedClickable(
-                            onClick = { onEventClick(item.event.id) },
-                            onLongClick = { onEventLongClick(item.event.id) },
-                        )
-                        .padding(horizontal = 2.dp, vertical = 2.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CategoryDot(colorHex = item.categoryColor, size = 6.dp)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = item.categoryPath,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 16.sp,
-                                lineHeight = 20.sp,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                            color = textColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    item.event.note?.let { note ->
-                        Text(
-                            text = note,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 12.dp, top = 2.dp),
-                        )
-                    }
-                }
+                        .align(Alignment.End)
+                        .padding(top = 4.dp),
+                )
             }
         }
     }
@@ -246,13 +267,13 @@ private fun UnrecordedBlock(
     colorHex: Long?,
     modifier: Modifier,
 ) {
-    val outline = MaterialTheme.colorScheme.outlineVariant
+    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
     val height = rememberBlockHeight(segment)
-    val labelColor = colorHex?.let { Color(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val compact = height < 48.dp
     Box(
         modifier = modifier
             .background(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f),
                 shape = BlockShape,
             )
             .drawBehind {
@@ -281,8 +302,11 @@ private fun UnrecordedBlock(
                     ),
                 )
             }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        contentAlignment = Alignment.TopStart,
+            .padding(
+                horizontal = if (compact) 10.dp else 12.dp,
+                vertical = if (compact) 5.dp else 8.dp,
+            ),
+        contentAlignment = Alignment.CenterStart,
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -296,14 +320,14 @@ private fun UnrecordedBlock(
                         fontSize = 14.sp,
                         lineHeight = 19.sp,
                     ),
-                    color = labelColor,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                 )
             }
             if (height >= 62.dp) {
                 Text(
                     text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -316,9 +340,17 @@ private fun UnrecordedBlock(
 private fun rememberBlockHeight(segment: TimelineSegment): Dp {
     val minutes = ((segment.endAt - segment.startAt).coerceAtLeast(60_000L)) / 60_000f
     return if (segment.isUnrecorded) {
-        (46f + minutes * 0.45f).coerceIn(50f, 120f).dp
+        (32f + minutes * 0.50f).coerceIn(36f, 120f).dp
     } else {
         val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 28f
         (58f + minutes * 0.60f + extraRows).coerceIn(62f, 220f).dp
     }
+}
+
+/** 估算事件区实际占用的高度，仅在确有留白时补充时长，避免重叠记录相互挤压。 */
+private fun recordedEventsHeight(segment: TimelineSegment): Dp {
+    val eventCount = segment.events.size
+    val noteCount = segment.events.count { it.event.note != null }
+    val gaps = (eventCount - 1).coerceAtLeast(0) * 2
+    return (12 + eventCount * 24 + noteCount * 38 + gaps).dp
 }

@@ -10,14 +10,15 @@ import org.json.JSONObject
 /**
  * 备份文件的 JSON 编解码。
  *
- * 结构固定为 { schema: 1, exportedAt, categories: [...], events: [...] }，
+ * 当前写出 { schema: 2, exportedAt, categories: [...], events: [...] }，并兼容读取 schema 1。
  * 只依赖 Android 自带的 org.json，不引入额外依赖。
  *
  * 读取失败统一抛 [IllegalArgumentException]（文案「不是有效的数据文件」），
  * 方便调用方把 message 直接展示给用户；note 缺失 / 为空按 null 处理。
  */
 object TransferJson {
-    private const val SCHEMA_VERSION = 1
+    private const val SCHEMA_VERSION = 2
+    private const val MIN_SUPPORTED_SCHEMA = 1
     private const val FALLBACK_COLOR = 0xFF9AA29A
     private const val INVALID_MESSAGE = "不是有效的数据文件"
 
@@ -50,6 +51,7 @@ object TransferJson {
                     put("categoryId", event.categoryId)
                     put("createdAt", event.createdAt)
                     put("updatedAt", event.updatedAt)
+                    put("uuid", event.uuid ?: JSONObject.NULL)
                 },
             )
         }
@@ -73,7 +75,7 @@ object TransferJson {
 
     private fun readRoot(root: JSONObject): LedgerSnapshot {
         if (!root.has("schema") || root.isNull("schema")) invalid()
-        if (root.getInt("schema") != SCHEMA_VERSION) invalid()
+        if (root.getInt("schema") !in MIN_SUPPORTED_SCHEMA..SCHEMA_VERSION) invalid()
 
         val exportedAt = if (root.has("exportedAt") && !root.isNull("exportedAt")) {
             root.getLong("exportedAt")
@@ -138,6 +140,7 @@ object TransferJson {
             categoryId = getLong("categoryId"),
             createdAt = createdAt,
             updatedAt = updatedAt,
+            uuid = if (has("uuid") && !isNull("uuid")) getString("uuid").trim().ifEmpty { null } else null,
         )
     }
 

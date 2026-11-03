@@ -14,6 +14,10 @@ import io.github.huig7.shi.domain.model.ImportMode
 import io.github.huig7.shi.domain.model.LedgerSnapshot
 import io.github.huig7.shi.domain.model.TimelineEvent
 import io.github.huig7.shi.domain.model.buildCategoryTree
+import io.github.huig7.shi.domain.model.legacyIdentity
+import io.github.huig7.shi.domain.model.legacyUuid
+import io.github.huig7.shi.domain.resolveOverlap
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
@@ -70,44 +74,9 @@ class TimeLogRepository(private val database: AppDatabase) {
     suspend fun getOverlappingEvents(startAt: Long, endAt: Long, excludeId: Long): List<Event> =
         eventDao.getOverlapping(startAt, endAt, excludeId).map { it.toDomain() }
 
-    suspend fun saveEvent(
-        id: Long?,
-        note: String?,
-        startAt: Long,
-        endAt: Long,
-        categoryId: Long,
-    ) {
-        val now = System.currentTimeMillis()
-        val cleanNote = note.cleanNote()
-        val safeEndAt = endAt.coerceAtLeast(startAt + 60_000L)
-        if (id == null) {
-            eventDao.insert(
-                EventEntity(
-                    note = cleanNote,
-                    startAt = startAt,
-                    endAt = safeEndAt,
-                    categoryId = categoryId,
-                    createdAt = now,
-                    updatedAt = now,
-                ),
-            )
-        } else {
-            val existing = eventDao.getById(id) ?: return
-            eventDao.update(
-                existing.copy(
-                    note = cleanNote,
-                    startAt = startAt,
-                    endAt = safeEndAt,
-                    categoryId = categoryId,
-                    updatedAt = now,
-                ),
-            )
-        }
-    }
-
     /**
-     * 保存正在编辑的区间，并按 [plan] 让其它重叠记录让路：
-     * victims 由用户确认后才会出现在 plan 里，调用方保证确认语义。
+     * 保存正在编辑的区间，并按 [plan] 让其它重叠记录让路。
+     * 事务内重新查询并比较方案；确认期间发生冲突变化时不写入任何内容。
      */
     suspend fun saveEventResolved(
         id: Long?,
@@ -116,7 +85,15 @@ class TimeLogRepository(private val database: AppDatabase) {
         endAt: Long,
         categoryId: Long,
         plan: OverlapPlan,
-    ): Long = database.withTransaction {
+    ): SaveEventResult = database.withTransaction {
+        if (id != null && eventDao.getById(id) == null) {
+            return@withTransaction SaveEventResult.EventNotFound
+        }
+        val currentOthers = eventDao.getOverlapping(startAt, endAt, id ?: -1L).map { it.toDomain() }
+        if (resolveOverlap(startAt, endAt, currentOthers) != plan) {
+            return@withTransaction SaveEventResult.OverlapChanged
+        }
+
         val now = System.currentTimeMillis()
         val cleanNote = note.cleanNote()
         val safeEndAt = endAt.coerceAtLeast(startAt + 60_000L)
@@ -143,12 +120,13 @@ class TimeLogRepository(private val database: AppDatabase) {
                     categoryId = clone.categoryId,
                     createdAt = clone.createdAt,
                     updatedAt = now,
+                    uuid = UUID.randomUUID().toString(),
                 ),
             )
         }
 
         if (id == null) {
-            eventDao.insert(
+            val newId = eventDao.insert(
                 EventEntity(
                     note = cleanNote,
                     startAt = startAt,
@@ -156,24 +134,22 @@ class TimeLogRepository(private val database: AppDatabase) {
                     categoryId = categoryId,
                     createdAt = now,
                     updatedAt = now,
+                    uuid = UUID.randomUUID().toString(),
                 ),
             )
+            SaveEventResult.Saved(newId)
         } else {
-            val existing = eventDao.getById(id)
-            if (existing == null) {
-                -1L
-            } else {
-                eventDao.update(
-                    existing.copy(
-                        note = cleanNote,
-                        startAt = startAt,
-                        endAt = safeEndAt,
-                        categoryId = categoryId,
-                        updatedAt = now,
-                    ),
-                )
-                id
-            }
+            val existing = eventDao.getById(id)!!
+            eventDao.update(
+                existing.copy(
+                    note = cleanNote,
+                    startAt = startAt,
+                    endAt = safeEndAt,
+                    categoryId = categoryId,
+                    updatedAt = now,
+                ),
+            )
+            SaveEventResult.Saved(id)
         }
     }
 
@@ -282,7 +258,7 @@ class TimeLogRepository(private val database: AppDatabase) {
             val newId = categoryDao.insert(entity)
             idMap[category.id] = newId
         }
-        insertImportedEvents(snapshot.events, idMap)
+        insertImportedEvents(snapshot.events, idMap, skipExisting = false)
     }
 
     private suspend fun restoreMerge(snapshot: LedgerSnapshot) {
@@ -326,12 +302,13 @@ class TimeLogRepository(private val database: AppDatabase) {
                 )
             }
         }
-        insertImportedEvents(snapshot.events, idMap)
+        insertImportedEvents(snapshot.events, idMap, skipExisting = true)
     }
 
     private suspend fun insertImportedEvents(
         events: List<ExportedEvent>,
         idMap: Map<Long, Long>,
+        skipExisting: Boolean,
     ) {
         val fallback = categoryDao.getSystemCategory()?.id
             ?: categoryDao.insert(
@@ -343,7 +320,15 @@ class TimeLogRepository(private val database: AppDatabase) {
                     isSystem = true,
                 ),
             )
+        val legacyOccurrences = mutableMapOf<String, Int>()
         events.forEach { event ->
+            val uuid = event.uuid?.takeIf { it.isNotBlank() } ?: run {
+                val identity = event.legacyIdentity()
+                val occurrence = legacyOccurrences[identity] ?: 0
+                legacyOccurrences[identity] = occurrence + 1
+                event.legacyUuid(occurrence)
+            }
+            if (skipExisting && eventDao.getByUuid(uuid) != null) return@forEach
             val startAt = event.startAt
             val endAt = event.endAt.coerceAtLeast(startAt + 60_000L)
             eventDao.insert(
@@ -354,6 +339,7 @@ class TimeLogRepository(private val database: AppDatabase) {
                     categoryId = idMap[event.categoryId] ?: fallback,
                     createdAt = event.createdAt,
                     updatedAt = event.updatedAt,
+                    uuid = uuid,
                 ),
             )
         }
@@ -399,6 +385,7 @@ class TimeLogRepository(private val database: AppDatabase) {
         categoryId = categoryId,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        uuid = uuid,
     )
 
     private fun CategoryEntity.toExport(): ExportedCategory = ExportedCategory(
@@ -417,7 +404,14 @@ class TimeLogRepository(private val database: AppDatabase) {
         categoryId = categoryId,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        uuid = uuid,
     )
+}
+
+sealed interface SaveEventResult {
+    data class Saved(val id: Long) : SaveEventResult
+    data object EventNotFound : SaveEventResult
+    data object OverlapChanged : SaveEventResult
 }
 
 sealed interface CategoryDeletionResult {

@@ -116,6 +116,32 @@ class StatisticsTest {
         assertEquals(at("2026-10-01T00:00"), previous.endAt)
     }
 
+    @Test
+    fun customShiftAcrossSpringDstKeepsLocalMidnightAndCalendarLength() {
+        val newYork = ZoneId.of("America/New_York")
+        val window = StatsWindows.custom(
+            LocalDate.of(2024, 3, 10),
+            LocalDate.of(2024, 3, 10),
+            newYork,
+        )
+        val next = StatsWindows.shift(window, 1, newYork)
+        assertEquals(at("2024-03-11T00:00", newYork), next.startAt)
+        assertEquals(at("2024-03-12T00:00", newYork), next.endAt)
+    }
+
+    @Test
+    fun customShiftAcrossAutumnDstKeepsLocalMidnightAndCalendarLength() {
+        val newYork = ZoneId.of("America/New_York")
+        val window = StatsWindows.custom(
+            LocalDate.of(2024, 11, 3),
+            LocalDate.of(2024, 11, 3),
+            newYork,
+        )
+        val next = StatsWindows.shift(window, 1, newYork)
+        assertEquals(at("2024-11-04T00:00", newYork), next.startAt)
+        assertEquals(at("2024-11-05T00:00", newYork), next.endAt)
+    }
+
     // ---------- 聚合 ----------
 
     @Test
@@ -489,8 +515,10 @@ class StatisticsTest {
 
     // ---------- 夹具 ----------
 
-    private fun at(value: String): Long =
-        LocalDateTime.parse(value).atZone(zone).toInstant().toEpochMilli()
+    private fun at(value: String): Long = at(value, zone)
+
+    private fun at(value: String, targetZone: ZoneId): Long =
+        LocalDateTime.parse(value).atZone(targetZone).toInstant().toEpochMilli()
 
     private fun event(
         id: Long,

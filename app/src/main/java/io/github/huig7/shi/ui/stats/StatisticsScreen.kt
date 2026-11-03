@@ -3,6 +3,7 @@ package io.github.huig7.shi.ui.stats
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,11 +15,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +53,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,7 +73,11 @@ import io.github.huig7.shi.ui.theme.RiseRed
 import io.github.huig7.shi.ui.theme.RiseRedDark
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.LocalDate
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /** 自定义时间段需要连续弹两次日期选择：先起始日，再结束日。 */
 private enum class DatePickerStep { START, END }
@@ -78,10 +93,19 @@ private const val RING_MIN_ANGLE = 1f
 private val RING_INNER_RATIOS = floatArrayOf(0.46f, 0.68f, 0.84f)
 private val RING_OUTER_RATIOS = floatArrayOf(0.68f, 0.84f, 1.0f)
 
+/** 弧段在分类树中的索引路径；不能只用分类 ID，因为多个未分类根可能共用占位 ID。 */
+private data class RingSegment(
+    val path: List<Int>,
+    val usage: CategoryUsage,
+    val layer: Int,
+    val startAngle: Float,
+    val sweepAngle: Float,
+)
+
 /**
  * 统计页（v3.0）：模式切换、范围导航、多层环形堆叠图与分类用时列表。
  *
- * 点击有子分类的行可下钻到下一级，顶部面包屑与返回按钮逐级回到根层；
+ * 弧段与分类行可联动选中；有子分类的行可通过行尾箭头下钻，顶部面包屑与返回按钮逐级回到根层；
  * 下钻只影响「分类用时」区块与环图层级，模式、翻页和自定义区间照常可用。
  *
  * 页面整体可滚动；[footer] 渲染在内容最后，用于承载底部数据迁移入口。
@@ -101,6 +125,10 @@ fun StatisticsScreen(
     val summary = state.summary
     var pickerStep by remember { mutableStateOf<DatePickerStep?>(null) }
     var pendingStart by remember { mutableStateOf<LocalDate?>(null) }
+    // 窗口或下钻层级改变时立即回到总览，summary 更新时也不沿用旧弧段。
+    var selectedRingPath by remember(state.window, state.focusPath) {
+        mutableStateOf<List<Int>?>(null)
+    }
 
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val riseColor = if (isDark) RiseRedDark else RiseRed
@@ -142,24 +170,43 @@ fun StatisticsScreen(
             state.isLoading -> Unit
             summary == null -> Unit
             else -> {
-                RingSection(summary = summary)
+                val segments = remember(summary) { buildRingSegments(summary.roots) }
+                val selectedSegment = selectedRingPath?.let { path ->
+                    segments.firstOrNull { it.path == path }
+                }
+                LaunchedEffect(summary) {
+                    selectedRingPath = null
+                }
+                RingSection(
+                    summary = summary,
+                    segments = segments,
+                    selectedSegment = selectedSegment,
+                    onSegmentSelected = { path ->
+                        selectedRingPath = if (selectedRingPath == path) null else path
+                    },
+                )
                 if (summary.totalMillis <= 0L) {
                     EmptyStats()
                 } else {
                     SectionHeader("分类用时")
-                    // 环形图最多三层，因此最多再下钻两级；叶子分类没有下一级，整行不可点。
+                    // 环形图最多三层，因此最多再下钻两级；行主体选中，独立箭头下钻。
                     val canDrillFurther = state.focusPath.size < MAX_DRILL_LEVELS
                     val maxMillis = summary.roots.maxOfOrNull { it.millis } ?: 1L
                     if (summary.roots.isEmpty() && state.focusPath.isNotEmpty()) {
                         DrillEmptyHint()
                     } else {
-                        summary.roots.forEach { root ->
+                        summary.roots.forEachIndexed { index, root ->
                             val drillable = canDrillFurther && root.children.isNotEmpty()
                             CategoryUsageRow(
                                 usage = root,
                                 maxMillis = maxMillis,
                                 riseColor = riseColor,
                                 fallColor = fallColor,
+                                selected = selectedSegment?.path?.firstOrNull() == index,
+                                onSelect = {
+                                    val rootPath = listOf(index)
+                                    selectedRingPath = if (selectedRingPath == rootPath) null else rootPath
+                                },
                                 onDrill = if (drillable) onCategoryDrilled else null,
                             )
                         }
@@ -295,62 +342,134 @@ private fun RangeNav(
 }
 
 @Composable
-private fun RingSection(summary: StatsSummary) {
+private fun RingSection(
+    summary: StatsSummary,
+    segments: List<RingSegment>,
+    selectedSegment: RingSegment?,
+    onSegmentSelected: (List<Int>?) -> Unit,
+) {
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
     val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
     val isEmpty = summary.totalMillis <= 0L
+    val minimumTouchRadius = with(LocalDensity.current) { 24.dp.toPx() }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Canvas(
+        Box(
             modifier = Modifier
                 .widthIn(max = 320.dp)
                 .fillMaxWidth()
                 .aspectRatio(1f),
+            contentAlignment = Alignment.Center,
         ) {
-            val radius = minOf(size.width, size.height) / 2f
-            if (radius <= 0f) return@Canvas
-            val center = Offset(size.width / 2f, size.height / 2f)
-            if (isEmpty) {
-                for (layer in 0 until RING_LAYER_COUNT) {
-                    drawRingTrack(layer, center, radius, trackColor)
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(segments, minimumTouchRadius, isEmpty) {
+                        detectTapGestures { position ->
+                            if (!isEmpty) {
+                                val hit = findRingSegment(
+                                    position = position,
+                                    canvasSize = Size(size.width.toFloat(), size.height.toFloat()),
+                                    segments = segments,
+                                    minimumTouchRadius = minimumTouchRadius,
+                                )
+                                onSegmentSelected(hit?.path)
+                            }
+                        }
+                    }
+                    .semantics {
+                        contentDescription = "三层分类用时环图，可选择弧段查看分类详情"
+                        stateDescription = selectedSegment?.let { "已选择${it.usage.name}" } ?: "未选择分类"
+                        customActions = segments.map { segment ->
+                            CustomAccessibilityAction(
+                                label = "选择${segment.usage.name}，第${segment.layer + 1}层",
+                            ) {
+                                onSegmentSelected(segment.path)
+                                true
+                            }
+                        }
+                    },
+            ) {
+                val radius = minOf(size.width, size.height) / 2f
+                if (radius <= 0f) return@Canvas
+                val center = Offset(size.width / 2f, size.height / 2f)
+                if (isEmpty) {
+                    for (layer in 0 until RING_LAYER_COUNT) {
+                        drawRingTrack(layer, center, radius, trackColor)
+                    }
+                } else {
+                    val populatedLayers = segments.mapTo(mutableSetOf()) { it.layer }
+                    for (layer in 0 until RING_LAYER_COUNT) {
+                        if (layer in populatedLayers) drawRingTrack(layer, center, radius, trackColor)
+                    }
+                    segments.forEach { segment ->
+                        val geometry = ringGeometry(segment.layer, center, radius)
+                        val selected = segment.path == selectedSegment?.path
+                        drawArc(
+                            color = Color(segment.usage.colorHex).copy(
+                                alpha = if (selectedSegment == null || selected) 1f else 0.55f,
+                            ),
+                            startAngle = segment.startAngle,
+                            sweepAngle = segment.sweepAngle,
+                            useCenter = false,
+                            topLeft = geometry.topLeft,
+                            size = geometry.size,
+                            style = Stroke(
+                                width = geometry.strokeWidth + if (selected) 2.dp.toPx() else 0f,
+                            ),
+                        )
+                    }
                 }
-            } else {
-                val layerHasContent = BooleanArray(RING_LAYER_COUNT)
-                summary.roots.forEach { root ->
-                    if (root.millis > 0L) layerHasContent[0] = true
-                    if (root.children.isNotEmpty()) layerHasContent[1] = true
-                    if (root.children.any { it.children.isNotEmpty() }) layerHasContent[2] = true
+            }
+            Column(
+                modifier = Modifier.widthIn(max = 124.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (selectedSegment != null) {
+                    Text(
+                        text = selectedSegment.usage.name,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(2.dp))
                 }
-                for (layer in 0 until RING_LAYER_COUNT) {
-                    if (layerHasContent[layer]) drawRingTrack(layer, center, radius, trackColor)
-                }
-                drawUsageLayer(
-                    usages = summary.roots,
-                    layer = 0,
-                    startAngle = -90f,
-                    totalSweep = 360f,
-                    center = center,
-                    radius = radius,
+                Text(
+                    text = when {
+                        isEmpty -> "—"
+                        selectedSegment != null -> DateTimeFormat.durationText(selectedSegment.usage.millis)
+                        else -> DateTimeFormat.durationText(summary.totalMillis)
+                    },
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = if (selectedSegment != null) {
+                        "第${selectedSegment.layer + 1}层 · ${selectedSegment.usage.eventCount} 条记录"
+                    } else {
+                        "共 ${summary.eventCount} 条记录"
+                    },
+                    fontSize = 11.sp,
+                    color = mutedColor,
+                    maxLines = 1,
                 )
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        if (!isEmpty) {
             Text(
-                text = if (isEmpty) "—" else DateTimeFormat.durationText(summary.totalMillis),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "共 ${summary.eventCount} 条记录",
-                fontSize = 11.sp,
+                text = "内 → 外：一级 · 二级 · 三级",
+                modifier = Modifier.padding(top = 2.dp),
+                fontSize = 10.sp,
                 color = mutedColor,
                 maxLines = 1,
             )
@@ -458,13 +577,15 @@ private fun DrillEmptyHint() {
     )
 }
 
-/** [onDrill] 不为 null 时整行可点（回调分类 ID），并在行尾显示进入下一级的箭头。 */
+/** 行主体只负责选中；[onDrill] 不为 null 时，行尾独立的 48dp 箭头负责下钻。 */
 @Composable
 private fun CategoryUsageRow(
     usage: CategoryUsage,
     maxMillis: Long,
     riseColor: Color,
     fallColor: Color,
+    selected: Boolean,
+    onSelect: () -> Unit,
     onDrill: ((Long) -> Unit)? = null,
 ) {
     val accent = Color(usage.colorHex)
@@ -475,14 +596,17 @@ private fun CategoryUsageRow(
         (usage.millis.toDouble() / maxMillis.toDouble()).toFloat().coerceIn(0.03f, 1f)
     }
 
-    val rowModifier = onDrill?.let { drill ->
-        Modifier.clickable { drill(usage.categoryId) }
-    } ?: Modifier
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .then(rowModifier)
-            .padding(horizontal = 20.dp, vertical = 7.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.09f) else Color.Transparent,
+            )
+            .selectable(selected = selected, onClick = onSelect)
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 8.dp, vertical = 7.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -522,13 +646,17 @@ private fun CategoryUsageRow(
                 maxLines = 1,
             )
             if (onDrill != null) {
-                Spacer(Modifier.width(2.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = "查看下一级分类",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                IconButton(
+                    onClick = { onDrill(usage.categoryId) },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = "查看${usage.name}的下一级分类",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -644,47 +772,91 @@ private fun DrawScope.drawRingTrack(layer: Int, center: Offset, radius: Float, c
     )
 }
 
-/**
- * 递归画出某一层分类环；子级按父级的角度范围再切分，形成多层堆叠。
- */
-private fun DrawScope.drawUsageLayer(
+/** 预先展开弧段，让绘制、触摸命中与无障碍操作共享同一组几何数据。 */
+private fun buildRingSegments(roots: List<CategoryUsage>): List<RingSegment> {
+    val segments = mutableListOf<RingSegment>()
+    appendRingSegments(
+        usages = roots,
+        layer = 0,
+        startAngle = -90f,
+        totalSweep = 360f,
+        parentPath = emptyList(),
+        segments = segments,
+    )
+    return segments
+}
+
+private fun appendRingSegments(
     usages: List<CategoryUsage>,
     layer: Int,
     startAngle: Float,
     totalSweep: Float,
-    center: Offset,
-    radius: Float,
+    parentPath: List<Int>,
+    segments: MutableList<RingSegment>,
 ) {
     if (layer >= RING_LAYER_COUNT || usages.isEmpty()) return
     val totalMillis = usages.sumOf { it.millis }
     if (totalMillis <= 0L) return
 
-    val geometry = ringGeometry(layer, center, radius)
     var cursor = startAngle
-    usages.forEach { usage ->
+    usages.forEachIndexed { index, usage ->
+        val path = parentPath + index
         val sweep = (totalSweep.toDouble() * usage.millis.toDouble() / totalMillis.toDouble()).toFloat()
         val visibleSweep = (sweep - RING_GAP_ANGLE).coerceAtLeast(RING_MIN_ANGLE).coerceAtMost(sweep)
         if (visibleSweep > 0f) {
-            drawArc(
-                color = Color(usage.colorHex),
+            segments += RingSegment(
+                path = path,
+                usage = usage,
+                layer = layer,
                 startAngle = cursor + (sweep - visibleSweep) / 2f,
                 sweepAngle = visibleSweep,
-                useCenter = false,
-                topLeft = geometry.topLeft,
-                size = geometry.size,
-                style = Stroke(width = geometry.strokeWidth),
             )
         }
         if (usage.children.isNotEmpty()) {
-            drawUsageLayer(
+            appendRingSegments(
                 usages = usage.children,
                 layer = layer + 1,
                 startAngle = cursor,
                 totalSweep = sweep,
-                center = center,
-                radius = radius,
+                parentPath = path,
+                segments = segments,
             )
         }
         cursor += sweep
     }
+}
+
+/** 命中可见弧段；环带过窄时将径向触摸范围扩到至少 48dp，并取离环心线最近者。 */
+private fun findRingSegment(
+    position: Offset,
+    canvasSize: Size,
+    segments: List<RingSegment>,
+    minimumTouchRadius: Float,
+): RingSegment? {
+    val radius = minOf(canvasSize.width, canvasSize.height) / 2f
+    if (radius <= 0f) return null
+    val center = Offset(canvasSize.width / 2f, canvasSize.height / 2f)
+    val dx = position.x - center.x
+    val dy = position.y - center.y
+    val distance = sqrt(dx * dx + dy * dy)
+    val angle = (atan2(dy, dx) * 180.0 / PI).toFloat()
+
+    return segments.mapNotNull { segment ->
+        val geometry = ringGeometry(segment.layer, center, radius)
+        val ringRadius = geometry.size.width / 2f
+        val radialDistance = abs(distance - ringRadius)
+        val touchRadius = maxOf(geometry.strokeWidth / 2f, minimumTouchRadius)
+        if (radialDistance > touchRadius) return@mapNotNull null
+        val angleInSegment = normalizedAngle(angle - segment.startAngle)
+        if (angleInSegment > segment.sweepAngle) {
+            null
+        } else {
+            segment to radialDistance
+        }
+    }.minByOrNull { it.second }?.first
+}
+
+private fun normalizedAngle(angle: Float): Float {
+    val remainder = angle % 360f
+    return if (remainder < 0f) remainder + 360f else remainder
 }

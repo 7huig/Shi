@@ -125,6 +125,11 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
     fun confirmDelete() {
         val id = transient.value.pendingDeleteId ?: return
         transient.update { it.copy(pendingDeleteId = null) }
+        deleteEvent(id)
+    }
+
+    /** 编辑页已在当前表单内完成确认，可直接删除并保留其它页面状态。 */
+    fun deleteEvent(id: Long) {
         viewModelScope.launch { repository.deleteEvent(id) }
     }
 

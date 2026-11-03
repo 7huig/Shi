@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -24,7 +25,7 @@ import io.github.huig7.shi.ui.home.CategoryDot
 
 /**
  * 固定展开的分类选择区：不滚动、全部可见，一眼扫到就能点。
- * 每个根分类一行，根 + 子分类并排；行内放不下时 FlowRow 自动换行。
+ * 根分类与二级分类同组排列；三级分类按父分类另起缩进行，紧凑且能看清归属。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -34,38 +35,54 @@ fun CategoryGrid(
     onSelect: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         tree.roots.forEach { root ->
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                CategoryChip(
-                    id = root.category.id,
-                    name = root.category.name,
-                    colorHex = root.category.colorHex,
-                    selected = root.category.id == selectedId,
-                    emphasized = true,
-                    onSelect = onSelect,
-                )
-                root.children.forEach { child ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     CategoryChip(
-                        id = child.category.id,
-                        name = child.category.name,
-                        colorHex = child.category.colorHex,
-                        selected = child.category.id == selectedId,
-                        emphasized = false,
+                        id = root.category.id,
+                        name = root.category.name,
+                        colorHex = root.category.colorHex,
+                        selected = root.category.id == selectedId,
+                        emphasized = true,
                         onSelect = onSelect,
                     )
-                    child.children.forEach { grandChild ->
+                    root.children.forEach { child ->
                         CategoryChip(
-                            id = grandChild.category.id,
-                            name = grandChild.category.name,
-                            colorHex = grandChild.category.colorHex,
-                            selected = grandChild.category.id == selectedId,
+                            id = child.category.id,
+                            name = child.category.name,
+                            colorHex = child.category.colorHex,
+                            selected = child.category.id == selectedId,
                             emphasized = false,
                             onSelect = onSelect,
                         )
+                    }
+                }
+                root.children.filter { it.children.isNotEmpty() }.forEach { parent ->
+                    FlowRow(
+                        modifier = Modifier.padding(start = 28.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "${parent.category.name} /",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 15.dp),
+                        )
+                        parent.children.forEach { grandChild ->
+                            CategoryChip(
+                                id = grandChild.category.id,
+                                name = grandChild.category.name,
+                                colorHex = grandChild.category.colorHex,
+                                selected = grandChild.category.id == selectedId,
+                                emphasized = false,
+                                onSelect = onSelect,
+                            )
+                        }
                     }
                 }
             }
@@ -85,8 +102,13 @@ private fun CategoryChip(
     val color = Color(colorHex)
     Surface(
         onClick = { onSelect(id) },
+        modifier = Modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(12.dp),
-        color = if (selected) color.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface,
+        color = when {
+            selected -> color.copy(alpha = 0.16f)
+            emphasized -> color.copy(alpha = 0.06f)
+            else -> MaterialTheme.colorScheme.surface
+        },
         border = if (selected) {
             BorderStroke(1.5.dp, color)
         } else {
@@ -94,7 +116,7 @@ private fun CategoryChip(
         },
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CategoryDot(colorHex = colorHex, size = 7.dp)
@@ -102,7 +124,7 @@ private fun CategoryChip(
             Text(
                 text = name,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (selected) color else MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = if (selected || emphasized) FontWeight.Medium else FontWeight.Normal,
             )
         }

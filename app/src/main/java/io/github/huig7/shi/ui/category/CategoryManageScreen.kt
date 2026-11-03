@@ -534,14 +534,21 @@ private fun SolarTermPalette(selectedHex: Long, onSelect: (Long) -> Unit) {
 private fun ColorSwatch(colorHex: Long, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(28.dp)
+            .size(48.dp)
             .clip(CircleShape)
-            .background(Color(colorHex), CircleShape)
-            .border(
-                width = if (selected) 2.dp else 0.dp,
-                color = if (selected) MaterialTheme.colorScheme.onBackground else Color.Transparent,
-                shape = CircleShape,
-            )
             .clickable(onClick = onClick),
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Color(colorHex), CircleShape)
+                .border(
+                    width = if (selected) 2.dp else 0.dp,
+                    color = if (selected) MaterialTheme.colorScheme.onBackground else Color.Transparent,
+                    shape = CircleShape,
+                ),
+        )
+    }
 }

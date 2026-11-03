@@ -1,5 +1,6 @@
 package io.github.huig7.shi.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -19,7 +20,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.RESTRICT,
         ),
     ],
-    indices = [Index("categoryId"), Index("startAt")],
+    indices = [Index("categoryId"), Index("startAt"), Index(value = ["uuid"], unique = true)],
 )
 data class EventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -29,4 +30,5 @@ data class EventEntity(
     val categoryId: Long,
     val createdAt: Long,
     val updatedAt: Long,
+    @ColumnInfo(defaultValue = "''") val uuid: String = "",
 )
