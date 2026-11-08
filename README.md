@@ -2,12 +2,12 @@
 
 > 纯本地、无账号、无联网权限的 Android 时间记录器：用时间块和多层环图记录、复盘一天。
 
-[![Release](https://img.shields.io/badge/release-0.2.1-2F5D50)](https://github.com/7huig/Shi/releases/tag/v0.2.1)
+[![Release](https://img.shields.io/badge/release-0.2.2-2F5D50)](https://github.com/7huig/Shi/releases/tag/v0.2.2)
 [![Android CI](https://github.com/7huig/Shi/actions/workflows/android.yml/badge.svg)](https://github.com/7huig/Shi/actions/workflows/android.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![minSdk 29](https://img.shields.io/badge/Android-10%2B-brightgreen.svg)](https://developer.android.com/about/versions/android-10)
 
-**[下载 Shi 0.2.1 APK](https://github.com/7huig/Shi/releases/download/v0.2.1/Shi-0.2.1.apk)** · Android 10+ · 约 2.9 MB · 无广告
+**[下载 Shi 0.2.2 APK](https://github.com/7huig/Shi/releases/download/v0.2.2/Shi-0.2.2.apk)** · Android 10+ · 约 3.0 MB · 无广告
 
 [全部版本与校验值](https://github.com/7huig/Shi/releases) · [English Quick Start](#english-quick-start) · [验收与 FAQ](docs/QA.md)
 
@@ -54,7 +54,7 @@
 
 | 项目 | 版本 / 取值 |
 | --- | --- |
-| 应用版本 | 0.2.1（versionCode 8） |
+| 应用版本 | 0.2.2（versionCode 9） |
 | Android | minSdk 29 · targetSdk 31 · compileSdk 36 |
 | 语言与工具 | Kotlin 2.2.10 · Gradle 9.1.0 · AGP 9.0.1 · JDK 17 |
 | UI | Jetpack Compose（BOM 2025.08.01）· Material 3 |
@@ -111,7 +111,7 @@ design/icons/                       # 墨時图标与可复现渲染脚本
 
 **Shi (時)** is a local-only Android time logger with a continuous block timeline and interactive multi-ring statistics. No account, ads, network permission, or cloud sync.
 
-**[Download Shi 0.2.1 APK](https://github.com/7huig/Shi/releases/download/v0.2.1/Shi-0.2.1.apk)** · Android 10+ · about 2.9 MB · [Release notes & checksum](https://github.com/7huig/Shi/releases/tag/v0.2.1)
+**[Download Shi 0.2.2 APK](https://github.com/7huig/Shi/releases/download/v0.2.2/Shi-0.2.2.apk)** · Android 10+ · about 3.0 MB · [Release notes & checksum](https://github.com/7huig/Shi/releases/tag/v0.2.2)
 
 - Record and edit time blocks, fill gaps, and search notes with total duration.
 - Explore day / week / month / year / custom windows, select ring segments, and drill into categories.
