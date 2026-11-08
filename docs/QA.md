@@ -11,7 +11,7 @@
 - [x] 主界面时间 13sp、分类路径 16sp；日期标题为「今天 / 昨天 / M月d日」，不显示年份；今天与昨天只在副标题显示「周X」，其它日期显示完整「M月d日 周X」。
 - [x] 左侧时分标签的中心正落在相邻两个事件之间（首段保持顶部对齐）。
 - [x] 点记录块内空白区域也能打开编辑；块内每条记录仍可单独点按。
-- [x] 记录弹窗以紧凑树形分组展示分类，明确标注「开始 / 结束」并实时显示时长；修改后退出会确认，编辑页可删除记录。
+- [x] 记录弹窗以「一级 / 二级 / 三级」三列依次选择分类，顶部显示完整路径，点任意一级即把记录记到该级；三列各自滚动并自动定位选中项。明确标注「开始 / 结束」并实时显示时长；修改后退出会确认，编辑页可删除记录。
 - [x] 分类编辑弹窗为 4 行 × 6 列节气色板：春 / 夏 / 秋 / 冬 四行，每色下方标注节气名，选中色块有描边。
 - [x] 统计页顶栏为 日 / 周 / 月 / 年 / 自定义 五个 chip；左右箭头可查看前一个 / 后一个周期（当前为「今天」时右箭头禁用）。
 - [x] 三层环图：内、中、外三圈分别对应根 / 子 / 孙分类；点弧段后中心显示分类详情，对应根分类行同步高亮。
@@ -20,13 +20,14 @@
 - [x] 分类用时行：分类名右侧「N次」，时长左侧环比——增加红色、减少绿色、持平「0%」灰色、上一周期无记录显示红色「新增」。
 - [x] 导出文件名为 `時-yyyy-MM-dd.json`（schema 2，兼容导入 schema 1）。
 - [x] 深色模式下环图、环比红绿、色板、FAB 均正确。
-- [x] 分类页提示语为「按住右侧手柄上下拖动，可调整同级分类的顺序。最多 3 层，删除分类时其中的事件会一并删除。」
-- [x] 按住某行右侧三横线手柄上下拖动，行随手指实时换位；松手后顺序写入数据库，杀掉进程重进仍然保留。
+- [x] 分类页提示语为「点箭头展开或收起；按住右侧手柄上下拖动，可调整同级顺序。最多 3 层，删除分类时会一并删除其中的事件。」
+- [x] 分类页默认全部收起，只显示根分类与「· N」子级数量；点行内箭头展开 / 收起（200ms 旋转动画），顶栏「全部展开 / 全部收起」一键切换；在收起的父分类上点「+」新建子分类时会自动展开父分类。
+- [x] 按住某行右侧三横线手柄上下拖动，被拖行浮起跟手、其余行平滑让位，指针越过相邻行中心 6dp 才换位（临界点不抖动）；松手后顺序写入数据库，杀掉进程重进仍然保留。
 - [x] 「時計」中点分类行主体只选中，点行尾箭头进入下一级统计；面包屑「全部分类 / …」可逐级返回。
 - [x] 搜索结果顶部显示「找到 N 条记录」与「共 X 小时」的总时长。
 - [x] 旧版本数据库升级到 v5：原记录完整，自动补全事件 UUID；覆盖安装后启动与数据展示正常。
 - [x] `am force-stop` 后重启，数据完整保留。
-- [x] `./gradlew testDebugUnitTest assembleDebug --console=plain --offline` 全绿（TimelineBuilder 7 + OverlapResolver 12 + Statistics 36 + LegacyEventUuid 3 = 58 例）。
+- [x] `./gradlew testDebugUnitTest assembleDebug --console=plain --offline` 全绿（TimelineBuilder 7 + OverlapResolver 12 + Statistics 36 + LegacyEventUuid 3 + CategoryCascade 8 + CategoryVisibility 7 + DragMath 15 = 88 例）。
 - [x] `./gradlew assembleRelease` 产物已签名（R8 压缩 + 资源收缩），签名证书与 SHA-256 已核对。
 
 ## 常见问题
@@ -66,13 +67,13 @@ keyPassword=你的密码
 
 ### 怎么跑测试？有 UI 测试吗？
 
-目前只有 JVM 单元测试，覆盖时间分块、重叠求解、统计与旧备份 UUID 四类纯逻辑：
+目前只有 JVM 单元测试，覆盖时间分块、重叠求解、统计、旧备份 UUID、三级分类级联、分类展开可见性与拖拽落点数学七类纯逻辑：
 
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
-共 58 例（TimelineBuilder 7 + OverlapResolver 12 + Statistics 36 + LegacyEventUuid 3）。没有 instrumentation / Compose UI 测试，交互验收依赖上面的手动清单。
+共 88 例（TimelineBuilder 7 + OverlapResolver 12 + Statistics 36 + LegacyEventUuid 3 + CategoryCascade 8 + CategoryVisibility 7 + DragMath 15）。没有 instrumentation / Compose UI 测试，交互验收依赖上面的手动清单。
 
 ### 图标是用什么做的？字体许可？
 

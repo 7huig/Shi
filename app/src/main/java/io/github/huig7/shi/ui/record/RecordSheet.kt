@@ -134,7 +134,7 @@ fun RecordSheet(
             )
 
             Spacer(Modifier.height(14.dp))
-            CategoryGrid(
+            CategoryCascadePicker(
                 tree = state.tree,
                 selectedId = state.selectedCategoryId,
                 onSelect = onCategorySelected,

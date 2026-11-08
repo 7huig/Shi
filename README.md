@@ -21,7 +21,7 @@
 
 - **时间块时间轴**：连续展示记录与空白，点空隙即可补记；重叠记录仍可分别编辑。
 - **统计与下钻**：日／周／月／年／自定义窗口，环图选中、分类联动、层级下钻与环比。
-- **轻量记录**：三级分类、节气色板、拖动排序、备注搜索与命中总时长。
+- **轻量记录**：三级分类三栏依次选择、分类展开收起、拖动排序、节气色板、备注搜索与命中总时长。
 - **本地备份**：导出 JSON；合并导入识别重复事件，也可覆盖恢复。没有账号、云端同步或网络权限。
 
 ## 安装与数据
@@ -36,7 +36,7 @@
 
 | 记录表单 | 分类编辑 | 分类管理 | 备注搜索 |
 |:---:|:---:|:---:|:---:|
-| <img src="docs/screenshots/record-sheet.webp" width="220" alt="记录表单：分类层级、开始结束与时长"> | <img src="docs/screenshots/category-editor.webp" width="220" alt="分类编辑：节气色板"> | <img src="docs/screenshots/categories.webp" width="220" alt="分类管理：拖动排序"> | <img src="docs/screenshots/search.webp" width="220" alt="备注搜索与时间总和"> |
+| <img src="docs/screenshots/record-sheet.webp" width="220" alt="记录表单：三级分类三栏、开始结束与时长"> | <img src="docs/screenshots/category-editor.webp" width="220" alt="分类编辑：节气色板"> | <img src="docs/screenshots/categories.webp" width="220" alt="分类管理：展开收起与拖动排序"> | <img src="docs/screenshots/search.webp" width="220" alt="备注搜索与时间总和"> |
 
 深色模式：[时间轴](docs/screenshots/home-dark.webp) · [统计](docs/screenshots/stats-dark.webp)
 
@@ -60,7 +60,7 @@
 | UI | Jetpack Compose（BOM 2025.08.01）· Material 3 |
 | 数据 | Room 2.7.2（数据库 v5）· Coroutines 1.10.2 |
 | 架构 | MVVM + 单向数据流，纯函数 domain 层 |
-| 验证 | 58 例 JVM 单元测试 · CI test / lint / assemble · Pixel 6 API 31 手动验收 |
+| 验证 | 88 例 JVM 单元测试 · CI test / lint / assemble · Pixel 6 API 31 手动验收 |
 
 ## 从源码构建
 

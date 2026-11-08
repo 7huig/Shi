@@ -204,6 +204,9 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 onDeleteDismiss = categoryViewModel::dismissDelete,
                 onDeleteConfirm = categoryViewModel::confirmDelete,
                 onMove = categoryViewModel::moveCategory,
+                onToggleExpanded = categoryViewModel::toggleExpanded,
+                onExpandAll = { categoryViewModel.expandAll() },
+                onCollapseAll = { categoryViewModel.collapseAll() },
                 onMessageShown = categoryViewModel::consumeMessage,
             )
         }

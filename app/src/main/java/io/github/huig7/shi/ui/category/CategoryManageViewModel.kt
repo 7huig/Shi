@@ -36,6 +36,10 @@ data class CategoryManageUiState(
     val editor: CategoryEditor? = null,
     val pendingDelete: PendingCategoryDelete? = null,
     val message: String? = null,
+    /** 已展开的分类 id；默认空 = 全部收起，只看到根分类。 */
+    val expandedIds: Set<Long> = emptySet(),
+    /** 当前是否所有「有子分类」的节点都已展开，用于顶栏「全部展开 / 全部收起」。 */
+    val allExpanded: Boolean = false,
 )
 
 class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewModel() {
@@ -44,6 +48,8 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         val editor: CategoryEditor? = null,
         val pendingDelete: PendingCategoryDelete? = null,
         val message: String? = null,
+        /** 展开状态不落库，只保存在进程内；离开分类页再回来仍然保留。 */
+        val expanded: Set<Long> = emptySet(),
     )
 
     private val transient = MutableStateFlow(Transient())
@@ -52,11 +58,14 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         repository.categoryTree,
         transient,
     ) { tree, local ->
+        val branches = branchIds(tree)
         CategoryManageUiState(
             tree = tree,
             editor = local.editor,
             pendingDelete = local.pendingDelete,
             message = local.message,
+            expandedIds = local.expanded,
+            allExpanded = branches.isNotEmpty() && branches.all { it in local.expanded },
         )
     }.stateIn(
         scope = viewModelScope,
@@ -71,8 +80,10 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
             transient.update { it.copy(message = "分类最多支持 3 层") }
             return
         }
-        transient.update {
-            it.copy(
+        transient.update { local ->
+            local.copy(
+                // 在收起的父分类上「+」新建子分类时，先展开它，否则新分类保存后看不到。
+                expanded = if (parent == null) local.expanded else local.expanded + parent.category.id,
                 editor = CategoryEditor(
                     id = null,
                     parentId = parent?.category?.id,
@@ -174,8 +185,38 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         transient.update { it.copy(message = null) }
     }
 
+    /** 展开或收起一个分类（只影响它的子级是否可见）。 */
+    fun toggleExpanded(categoryId: Long) {
+        transient.update { local ->
+            local.copy(
+                expanded = if (categoryId in local.expanded) {
+                    local.expanded - categoryId
+                } else {
+                    local.expanded + categoryId
+                },
+            )
+        }
+    }
+
+    /** 展开所有「有子分类」的节点；只影响可见性，不落库。 */
+    fun expandAll() {
+        transient.update { it.copy(expanded = branchIds(uiState.value.tree)) }
+    }
+
+    /** 全部收起，只保留根分类。 */
+    fun collapseAll() {
+        transient.update { it.copy(expanded = emptySet()) }
+    }
+
     companion object {
         private const val MAX_DEPTH = 2
+
+        /** 所有有子分类的节点 id；「全部展开」与「是否已全部展开」都用它。 */
+        private fun branchIds(tree: CategoryTree): Set<Long> =
+            tree.flatten()
+                .filter { (node, _) -> node.children.isNotEmpty() }
+                .map { (node, _) -> node.category.id }
+                .toSet()
 
         fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
             initializer { CategoryManageViewModel(repository) }

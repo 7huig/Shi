@@ -53,6 +53,22 @@ data class CategoryTree(
         return result
     }
 
+    /**
+     * 展开状态下的可见行：根分类始终可见；某个节点只有在「父链上所有节点都已展开」时才出现，
+     * 它自身是否展开只影响它的子节点。返回的 Int 是层级深度（根为 0）。
+     */
+    fun visibleRows(expandedIds: Set<Long>): List<Pair<CategoryNode, Int>> {
+        val result = mutableListOf<Pair<CategoryNode, Int>>()
+        fun collect(nodes: List<CategoryNode>, depth: Int) {
+            nodes.forEach { node ->
+                result += node to depth
+                if (node.category.id in expandedIds) collect(node.children, depth + 1)
+            }
+        }
+        collect(roots, 0)
+        return result
+    }
+
     fun flatten(): List<Pair<CategoryNode, Int>> {
         val result = mutableListOf<Pair<CategoryNode, Int>>()
         fun collect(nodes: List<CategoryNode>, depth: Int) {
