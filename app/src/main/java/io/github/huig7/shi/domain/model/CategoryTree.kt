@@ -8,29 +8,37 @@ data class CategoryNode(
 data class CategoryTree(
     val roots: List<CategoryNode> = emptyList(),
 ) {
-    fun find(id: Long): CategoryNode? = findIn(roots, id)
+    /** id → 节点索引；树构建后不变，首次访问时建一次，find/父链遍历不再递归全树。 */
+    private val nodesById: Map<Long, CategoryNode> by lazy {
+        val map = mutableMapOf<Long, CategoryNode>()
+        fun collect(nodes: List<CategoryNode>) {
+            nodes.forEach { node ->
+                map[node.category.id] = node
+                collect(node.children)
+            }
+        }
+        collect(roots)
+        map
+    }
+
+    fun find(id: Long): CategoryNode? = nodesById[id]
+
+    /** 自根到 [id]（含）的分类链；找不到时返回空列表。 */
+    fun chainOf(id: Long): List<CategoryNode> {
+        val chain = ArrayDeque<CategoryNode>()
+        var current = find(id)
+        while (current != null) {
+            chain.addFirst(current)
+            current = current.category.parentId?.let(::find)
+        }
+        return chain.toList()
+    }
 
     fun pathOf(id: Long): String = pathSegments(id).joinToString(" / ")
 
-    fun pathSegments(id: Long): List<String> {
-        val path = mutableListOf<String>()
-        var current = find(id)
-        while (current != null) {
-            path.add(0, current.category.name)
-            current = current.category.parentId?.let(::find)
-        }
-        return path
-    }
+    fun pathSegments(id: Long): List<String> = chainOf(id).map { it.category.name }
 
-    fun depthOf(id: Long): Int {
-        var depth = 0
-        var current = find(id)
-        while (current != null) {
-            depth += 1
-            current = current.category.parentId?.let(::find)
-        }
-        return depth
-    }
+    fun depthOf(id: Long): Int = chainOf(id).size
 
     fun subtreeIds(id: Long): List<Long> {
         val node = find(id) ?: return emptyList()
@@ -69,14 +77,6 @@ data class CategoryTree(
         }
         collect(roots, 0)
         return result
-    }
-
-    private fun findIn(nodes: List<CategoryNode>, id: Long): CategoryNode? {
-        nodes.forEach { node ->
-            if (node.category.id == id) return node
-            findIn(node.children, id)?.let { return it }
-        }
-        return null
     }
 }
 

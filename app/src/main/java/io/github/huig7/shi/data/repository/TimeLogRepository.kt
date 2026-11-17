@@ -36,15 +36,7 @@ class TimeLogRepository(private val database: AppDatabase) {
         eventDao.observeAll(),
         categoryDao.observeAll(),
     ) { events, categories ->
-        val tree = buildCategoryTree(categories.map { it.toDomain() })
-        events.map { entity ->
-            val event = entity.toDomain()
-            TimelineEvent(
-                event = event,
-                categoryPath = tree.pathOf(event.categoryId),
-                categoryColor = tree.find(event.categoryId)?.category?.colorHex ?: 0xFF9AA29A,
-            )
-        }
+        events.toTimeline(buildCategoryTree(categories.map { it.toDomain() }))
     }
 
     suspend fun getEvent(id: Long): Event? = eventDao.getById(id)?.toDomain()
@@ -59,15 +51,7 @@ class TimeLogRepository(private val database: AppDatabase) {
             eventDao.searchByNote(keyword),
             categoryDao.observeAll(),
         ) { entities, categories ->
-            val tree = buildCategoryTree(categories.map { it.toDomain() })
-            entities.map { entity ->
-                val event = entity.toDomain()
-                TimelineEvent(
-                    event = event,
-                    categoryPath = tree.pathOf(event.categoryId),
-                    categoryColor = tree.find(event.categoryId)?.category?.colorHex ?: 0xFF9AA29A,
-                )
-            }
+            entities.toTimeline(buildCategoryTree(categories.map { it.toDomain() }))
         }
     }
 
@@ -367,6 +351,17 @@ class TimeLogRepository(private val database: AppDatabase) {
     }
 
     private fun String?.cleanNote(): String? = this?.trim()?.ifEmpty { null }
+
+    /** 时间轴 / 搜索共用的展示映射：补分类路径与颜色，分类缺失时用兜底灰。 */
+    private fun List<EventEntity>.toTimeline(tree: CategoryTree): List<TimelineEvent> =
+        map { entity ->
+            val event = entity.toDomain()
+            TimelineEvent(
+                event = event,
+                categoryPath = tree.pathOf(event.categoryId),
+                categoryColor = tree.find(event.categoryId)?.category?.colorHex ?: 0xFF9AA29A,
+            )
+        }
 
     private fun CategoryEntity.toDomain(): Category = Category(
         id = id,

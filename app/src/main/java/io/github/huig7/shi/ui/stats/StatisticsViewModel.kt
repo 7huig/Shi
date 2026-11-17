@@ -3,6 +3,8 @@ package io.github.huig7.shi.ui.stats
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.StatsBuilder
 import io.github.huig7.shi.domain.StatsMode
@@ -16,12 +18,14 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 
 /** 面包屑的一节：从根分类到当前聚焦分类。 */
@@ -115,11 +119,14 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
             // 分类被删除等情况下 build 会退回根层，面包屑跟随实际生效的聚焦分类。
             focusPath = crumbPath(tree, summary.focusCategoryId),
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MILLIS),
-        initialValue = StatisticsUiState(),
-    )
+    }
+        // 统计聚合是全量计算，不放主线程。
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MILLIS),
+            initialValue = StatisticsUiState(),
+        )
 
     /**
      * 切换查看方式。
@@ -227,12 +234,9 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
         private const val SUBSCRIPTION_TIMEOUT_MILLIS = 5_000L
         private const val DEFAULT_CUSTOM_DAYS = 7L
 
-        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    StatisticsViewModel(repository) as T
-            }
+        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
+            initializer { StatisticsViewModel(repository) }
+        }
     }
 }
 
@@ -276,13 +280,7 @@ private fun dayLabel(date: LocalDate, today: LocalDate): String {
 /** 聚焦分类到根的分类链；[categoryId] 为 null（根层）或分类已不存在时返回空。 */
 private fun crumbPath(tree: CategoryTree, categoryId: Long?): List<StatisticsCrumb> {
     if (categoryId == null) return emptyList()
-    val trail = mutableListOf<StatisticsCrumb>()
-    var current = tree.find(categoryId)
-    while (current != null) {
-        trail.add(0, StatisticsCrumb(current.category.id, current.category.name))
-        current = current.category.parentId?.let(tree::find)
-    }
-    return trail
+    return tree.chainOf(categoryId).map { StatisticsCrumb(it.category.id, it.category.name) }
 }
 
 private fun rangeLabel(start: LocalDate, end: LocalDate): String =

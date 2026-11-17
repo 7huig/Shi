@@ -3,6 +3,8 @@ package io.github.huig7.shi.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.model.TimelineEvent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -38,11 +40,8 @@ class SearchViewModel(private val repository: TimeLogRepository) : ViewModel() {
     companion object {
         private const val SEARCH_DEBOUNCE_MILLIS = 250L
 
-        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    SearchViewModel(repository) as T
-            }
+        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
+            initializer { SearchViewModel(repository) }
+        }
     }
 }

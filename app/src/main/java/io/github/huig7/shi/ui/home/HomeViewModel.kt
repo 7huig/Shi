@@ -3,6 +3,8 @@ package io.github.huig7.shi.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.model.Category
 import io.github.huig7.shi.domain.model.TimelineBuilder
@@ -10,12 +12,15 @@ import io.github.huig7.shi.domain.model.TimelineEvent
 import io.github.huig7.shi.domain.model.TimelineSegment
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.LocalDate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -91,11 +96,14 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
             editor = local.editor,
             pendingDelete = events.firstOrNull { it.event.id == local.pendingDeleteId },
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = HomeUiState(),
-    )
+    }
+        // 时间轴构建是全量排序聚合，不放主线程。
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = HomeUiState(),
+        )
 
     fun openNewRecord() {
         transient.update { it.copy(editor = EditorTarget.New()) }
@@ -130,15 +138,20 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
     /** 编辑页已在当前表单内完成确认，可直接删除并保留其它页面状态。 */
     fun deleteEvent(id: Long) {
-        viewModelScope.launch { repository.deleteEvent(id) }
+        viewModelScope.launch {
+            try {
+                repository.deleteEvent(id)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // 删除失败保持原状，列表不变，用户可重试；首页没有消息通道，不另加 UI。
+            }
+        }
     }
 
     companion object {
-        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    HomeViewModel(repository) as T
-            }
+        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
+            initializer { HomeViewModel(repository) }
+        }
     }
 }

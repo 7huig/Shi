@@ -49,9 +49,20 @@ jobs:
       - name: Lint (debug)
         run: ./gradlew :app:lintDebug --stacktrace
 
+      # CI 没有 keystore.properties，产出未签名 Release；目的是让 R8 与资源收缩在每次提交都被验证。
+      - name: Assemble release APK (unsigned)
+        run: ./gradlew :app:assembleRelease --stacktrace
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 14

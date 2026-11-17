@@ -35,7 +35,7 @@ data class CategoryCascade(
  */
 fun CategoryTree.cascadeFor(selectedId: Long?): CategoryCascade {
     // 从选中节点往上找到根，得到 [根, ..., 选中]；找不到就是空列表。
-    val chain = selectedId?.let(::ancestorChain).orEmpty()
+    val chain = selectedId?.let { chainOf(it) }.orEmpty()
     val level1 = levelOf(roots, chain.getOrNull(0))
     val level2 = levelOf(chain.getOrNull(0)?.children.orEmpty(), chain.getOrNull(1))
     val level3 = levelOf(chain.getOrNull(1)?.children.orEmpty(), chain.getOrNull(2))
@@ -53,14 +53,3 @@ private fun levelOf(options: List<CategoryNode>, selected: CategoryNode?): Casca
         options = options,
         selectedId = selected?.category?.id?.takeIf { id -> options.any { it.category.id == id } },
     )
-
-/** 与 CategoryTree.pathSegments 同源，但保留 Category 本体（UI 需要 name 与 colorHex）。 */
-private fun CategoryTree.ancestorChain(id: Long): List<CategoryNode> {
-    val chain = ArrayDeque<CategoryNode>()
-    var current = find(id)
-    while (current != null) {
-        chain.addFirst(current)
-        current = current.category.parentId?.let(::find)
-    }
-    return chain.toList()
-}

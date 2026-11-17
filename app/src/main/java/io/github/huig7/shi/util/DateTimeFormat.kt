@@ -49,9 +49,6 @@ object DateTimeFormat {
     fun datePart(epochMillis: Long): String =
         toLocalDateTime(epochMillis).format(shortMonthDayFormatter)
 
-    fun dateWithWeekday(epochMillis: Long): String =
-        toLocalDateTime(epochMillis).format(monthDayFormatter)
-
     fun isoDate(epochMillis: Long): String =
         toLocalDateTime(epochMillis).toLocalDate().toString()
 

@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.data.transfer.TransferJson
 import io.github.huig7.shi.domain.model.ImportMode
@@ -93,11 +95,8 @@ class DataTransferViewModel(private val repository: TimeLogRepository) : ViewMod
     }
 
     companion object {
-        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    DataTransferViewModel(repository) as T
-            }
+        fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
+            initializer { DataTransferViewModel(repository) }
+        }
     }
 }

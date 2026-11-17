@@ -60,7 +60,7 @@
 | UI | Jetpack Compose（BOM 2025.08.01）· Material 3 |
 | 数据 | Room 2.7.2（数据库 v5）· Coroutines 1.10.2 |
 | 架构 | MVVM + 单向数据流，纯函数 domain 层 |
-| 验证 | 88 例 JVM 单元测试 · CI test / lint / assemble · Pixel 6 API 31 手动验收 |
+| 验证 | 113 例 JVM 单元测试（含 Room 迁移与 JSON 备份编解码）· CI test / lint / assembleDebug / assembleRelease · Pixel 6 API 31 手动验收 |
 
 ## 从源码构建
 
@@ -96,7 +96,8 @@ app/src/main/java/io/github/huig7/shi/
 ├── domain/                        # 时间轴、重叠、统计、分类树等纯函数
 ├── ui/                            # home / record / stats / category / search / data
 └── util/DateTimeFormat.kt
-app/src/test/java/io/github/huig7/shi/domain/   # 88 个 JVM 单元测试
+app/src/test/java/io/github/huig7/shi/          # 113 个 JVM 单元测试（domain / 备份 / 迁移）
+app/schemas/                                    # Room 导出的 schema JSON，迁移测试据此校验
 design/icons/                       # 墨時图标与可复现渲染脚本
 githooks/                           # pre-commit：拦截超过 20 KiB 的代码文件
 ```

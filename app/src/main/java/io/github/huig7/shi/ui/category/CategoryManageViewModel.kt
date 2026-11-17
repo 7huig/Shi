@@ -10,6 +10,7 @@ import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.model.CategoryNode
 import io.github.huig7.shi.domain.model.CategoryTree
 import io.github.huig7.shi.domain.model.SolarTerms
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -132,18 +133,33 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         val name = editor.name.trim()
         if (name.isEmpty()) return
         viewModelScope.launch {
-            if (editor.id == null) {
-                repository.createCategory(name, editor.parentId, editor.colorHex)
-            } else {
-                repository.updateCategory(editor.id, name, editor.colorHex)
+            try {
+                if (editor.id == null) {
+                    repository.createCategory(name, editor.parentId, editor.colorHex)
+                } else {
+                    repository.updateCategory(editor.id, name, editor.colorHex)
+                }
+                transient.update { it.copy(editor = null) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // 保留编辑器内容，允许直接重试。
+                transient.update { it.copy(message = "保存失败，请重试") }
             }
-            transient.update { it.copy(editor = null) }
         }
     }
 
     /** 拖动排序：在同父分类的兄弟节点之间移动。 */
     fun moveCategory(categoryId: Long, targetIndex: Int) {
-        viewModelScope.launch { repository.moveCategory(categoryId, targetIndex) }
+        viewModelScope.launch {
+            try {
+                repository.moveCategory(categoryId, targetIndex)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                transient.update { it.copy(message = "排序失败，请重试") }
+            }
+        }
     }
 
     fun requestDelete(node: CategoryNode) {
@@ -152,8 +168,14 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
             return
         }
         viewModelScope.launch {
-            val count = repository.countEventsInSubtree(node.category.id)
-            transient.update { it.copy(pendingDelete = PendingCategoryDelete(node, count)) }
+            try {
+                val count = repository.countEventsInSubtree(node.category.id)
+                transient.update { it.copy(pendingDelete = PendingCategoryDelete(node, count)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                transient.update { it.copy(message = "读取分类数据失败，请重试") }
+            }
         }
     }
 
@@ -164,20 +186,26 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
     fun confirmDelete() {
         val pending = transient.value.pendingDelete ?: return
         viewModelScope.launch {
-            val message = when (val outcome = repository.deleteCategory(pending.node.category.id)) {
-                is CategoryDeletionResult.Deleted -> {
-                    val deleted = if (outcome.deletedEventCount > 0) {
-                        "，${outcome.deletedEventCount} 条事件"
-                    } else {
-                        ""
+            try {
+                val message = when (val outcome = repository.deleteCategory(pending.node.category.id)) {
+                    is CategoryDeletionResult.Deleted -> {
+                        val deleted = if (outcome.deletedEventCount > 0) {
+                            "，${outcome.deletedEventCount} 条事件"
+                        } else {
+                            ""
+                        }
+                        "已删除 ${outcome.categoryCount} 个分类$deleted"
                     }
-                    "已删除 ${outcome.categoryCount} 个分类$deleted"
-                }
 
-                CategoryDeletionResult.NotFound -> "分类已不存在"
-                CategoryDeletionResult.SystemCategory -> "系统分类不能删除"
+                    CategoryDeletionResult.NotFound -> "分类已不存在"
+                    CategoryDeletionResult.SystemCategory -> "系统分类不能删除"
+                }
+                transient.update { it.copy(pendingDelete = null, message = message) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                transient.update { it.copy(pendingDelete = null, message = "删除失败，请重试") }
             }
-            transient.update { it.copy(pendingDelete = null, message = message) }
         }
     }
 
