@@ -1,6 +1,10 @@
 # 统一换行符，避免 Windows/Linux 协作时的 CRLF 噪音
 * text=auto eol=lf
 
+# Git 钩子由 sh 执行，必须保持 LF
+githooks/* text eol=lf
+*.sh text eol=lf
+
 # Windows 脚本保持 CRLF
 *.bat text eol=crlf
 *.cmd text eol=crlf

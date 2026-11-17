@@ -9,7 +9,7 @@ import io.github.huig7.shi.data.repository.CategoryDeletionResult
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.model.CategoryNode
 import io.github.huig7.shi.domain.model.CategoryTree
-import io.github.huig7.shi.domain.model.SolarTermColors
+import io.github.huig7.shi.domain.model.SolarTerms
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -89,7 +89,7 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
                     parentId = parent?.category?.id,
                     parentName = parent?.category?.name,
                     name = "",
-                    colorHex = SolarTermColors.random(),
+                    colorHex = SolarTerms.random().colorHex,
                 ),
             )
         }

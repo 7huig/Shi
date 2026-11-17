@@ -24,10 +24,6 @@ data class CategoryCascade(
 ) {
     /** 与 RecordUiState.selectedCategoryId 对齐的简化入口。 */
     val selectedCategoryId: Long? get() = selected?.id
-
-    companion object {
-        const val LEVEL_COUNT = 3
-    }
 }
 
 /**

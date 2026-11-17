@@ -12,7 +12,6 @@ import java.util.Locale
 object DateTimeFormat {
     private val zh: Locale = Locale.SIMPLIFIED_CHINESE
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", zh)
-    private val fullDateFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日 EEEE", zh)
     private val monthDayFormatter = DateTimeFormatter.ofPattern("M月d日 EEEE", zh)
     private val shortMonthDayFormatter = DateTimeFormatter.ofPattern("M月d日", zh)
 
@@ -46,9 +45,6 @@ object DateTimeFormat {
     /** 固定输出「周日」「周一」…，不依赖不同 JDK 的 CLDR 短星期文本。 */
     private fun weekdayLabel(date: LocalDate): String =
         "周" + date.dayOfWeek.getDisplayName(TextStyle.NARROW, zh)
-
-    fun fullDateTime(epochMillis: Long): String =
-        toLocalDateTime(epochMillis).format(fullDateFormatter) + " " + time(epochMillis)
 
     fun datePart(epochMillis: Long): String =
         toLocalDateTime(epochMillis).format(shortMonthDayFormatter)

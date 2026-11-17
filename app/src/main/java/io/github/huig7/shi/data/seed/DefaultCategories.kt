@@ -5,7 +5,7 @@ package io.github.huig7.shi.data.seed
  * 同时给「未分类」一个稳定 ID（删除分类时会连同事件一起删除，系统分类仅作兜底展示）。
  *
  * 默认顺序：工作（沟通、执行）→ 休息（睡眠、放空）→ 学习（输入、输出）→ 娱乐（沉浸、社交）。
- * 颜色取自 24 节气色板（[io.github.huig7.shi.domain.model.SolarTermColors]），不显示节气名称。
+ * 颜色取自 24 节气色板（[io.github.huig7.shi.domain.model.SolarTerms]），不显示节气名称。
  */
 data class SeedCategory(
     val id: Long,

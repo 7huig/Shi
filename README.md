@@ -84,7 +84,7 @@ keyAlias=shi
 keyPassword=…
 ```
 
-没有该文件也能构建未签名 Release。贡献代码请阅读 [CONTRIBUTING](CONTRIBUTING.md)。
+没有该文件也能构建未签名 Release。贡献代码请阅读 [CONTRIBUTING](CONTRIBUTING.md)；首次克隆后执行一次 `sh githooks/install.sh` 以启用 20 KiB 代码文件上限的提交前检查。
 
 ## 工程结构
 
@@ -96,8 +96,9 @@ app/src/main/java/io/github/huig7/shi/
 ├── domain/                        # 时间轴、重叠、统计、分类树等纯函数
 ├── ui/                            # home / record / stats / category / search / data
 └── util/DateTimeFormat.kt
-app/src/test/java/io/github/huig7/shi/domain/   # 58 个 JVM 单元测试
+app/src/test/java/io/github/huig7/shi/domain/   # 88 个 JVM 单元测试
 design/icons/                       # 墨時图标与可复现渲染脚本
+githooks/                           # pre-commit：拦截超过 20 KiB 的代码文件
 ```
 
 ## 已知限制

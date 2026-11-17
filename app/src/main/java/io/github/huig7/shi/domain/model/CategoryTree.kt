@@ -22,16 +22,6 @@ data class CategoryTree(
         return path
     }
 
-    fun ancestorIds(id: Long): Set<Long> {
-        val ancestors = linkedSetOf<Long>()
-        var current = find(id)?.category?.parentId?.let(::find)
-        while (current != null) {
-            ancestors += current.category.id
-            current = current.category.parentId?.let(::find)
-        }
-        return ancestors
-    }
-
     fun depthOf(id: Long): Int {
         var depth = 0
         var current = find(id)

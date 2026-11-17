@@ -38,9 +38,6 @@ val SolarTerms: List<SolarTermColor> = listOf(
     SolarTermColor("大寒", "冬", 0xFF35505F),
 )
 
-/** 兼容旧接口：仅取色值。 */
-val SolarTermColors: List<Long> = SolarTerms.map { it.colorHex }
-
 /** 四季顺序，供 4 行 6 列色板使用。 */
 val SolarTermSeasons: List<Pair<String, List<SolarTermColor>>> =
     listOf("春", "夏", "秋", "冬").map { season -> season to SolarTerms.filter { it.season == season } }
