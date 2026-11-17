@@ -7,7 +7,7 @@ body:
     id: version
     attributes:
       label: 应用版本
-      description: 例如 0.2.2（versionCode 9）
+      description: 例如 0.2.3（versionCode 10）
     validations:
       required: true
   - type: input

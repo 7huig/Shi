@@ -23,8 +23,8 @@ android {
         applicationId = "io.github.huig7.shi"
         minSdk = 29
         targetSdk = 31
-        versionCode = 9
-        versionName = "0.2.2"
+        versionCode = 10
+        versionName = "0.2.3"
     }
 
     signingConfigs {
