@@ -61,6 +61,7 @@ fun CategoryManageScreen(
     onEditorSave: () -> Unit,
     onDeleteDismiss: () -> Unit,
     onDeleteConfirm: () -> Unit,
+    onDeleteMoveEvents: () -> Unit,
     onMove: (Long, Int) -> Unit,
     onToggleExpanded: (Long) -> Unit,
     onExpandAll: () -> Unit,
@@ -230,7 +231,7 @@ fun CategoryManageScreen(
                 item(key = "hint") {
                     Text(
                         text = "点箭头展开或收起；按住右侧手柄上下拖动，可调整同级顺序。" +
-                            "最多 3 层，删除分类时会一并删除其中的事件。",
+                            "最多 3 层；删除分类时可以选择一并删除事件，或保留事件并移到父级。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 8.dp),
@@ -313,6 +314,7 @@ fun CategoryManageScreen(
             pending = pending,
             onDismiss = onDeleteDismiss,
             onConfirm = onDeleteConfirm,
+            onMoveEvents = onDeleteMoveEvents,
         )
     }
 }

@@ -24,6 +24,10 @@ interface EventDao {
     @Query("SELECT COALESCE(MAX(endAt), 0) FROM event")
     suspend fun latestEnd(): Long
 
+    /** 最近一条记录的分类，用于新记录默认沿用上次选择。 */
+    @Query("SELECT categoryId FROM event ORDER BY startAt DESC, id DESC LIMIT 1")
+    suspend fun latestCategoryId(): Long?
+
     @Insert
     suspend fun insert(event: EventEntity): Long
 
@@ -38,6 +42,17 @@ interface EventDao {
 
     @Query("DELETE FROM event WHERE categoryId IN (:categoryIds)")
     suspend fun deleteByCategoryIds(categoryIds: List<Long>): Int
+
+    /** 删除分类时保留记录：把子树内的事件改挂到父级 / 未分类。 */
+    @Query(
+        "UPDATE event SET categoryId = :targetId, updatedAt = :updatedAt " +
+            "WHERE categoryId IN (:categoryIds)",
+    )
+    suspend fun reassignByCategoryIds(
+        categoryIds: List<Long>,
+        targetId: Long,
+        updatedAt: Long,
+    ): Int
 
     @Query("SELECT COUNT(*) FROM event WHERE categoryId IN (:categoryIds)")
     suspend fun countByCategoryIds(categoryIds: List<Long>): Int

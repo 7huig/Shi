@@ -83,6 +83,19 @@ class TimelineBuilderTest {
     }
 
     @Test
+    fun subMinuteTailDoesNotBecomeAnEmptyBlock() {
+        val days = build(
+            event(1, "2026-11-01T08:00", "2026-11-01T09:00"),
+            now = LocalDateTime.of(today, java.time.LocalTime.of(9, 0, 30)),
+        )
+        val segments = days.single().segments
+        assertEquals(2, segments.size)
+        assertTrue(segments.first().isUnrecorded)
+        assertEquals(at(LocalDateTime.of(today, java.time.LocalTime.of(9, 0))), segments.last().endAt)
+        assertEquals(1L, segments.last().events.single().event.id)
+    }
+
+    @Test
     fun splitsEventAcrossMidnight() {
         val days = build(
             event(1, "2026-10-31T23:00", "2026-11-01T01:00"),

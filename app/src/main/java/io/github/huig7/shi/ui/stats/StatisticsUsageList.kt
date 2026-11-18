@@ -48,21 +48,31 @@ internal fun SectionHeader(text: String) {
 
 @Composable
 internal fun EmptyStats() {
-    Text(
-        text = "这段时间还没有记录",
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        fontSize = 15.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+    ) {
+        Text(
+            text = "这段时间还没有记录",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "回到時記，点右下角 + 记一笔；长按 + 可以直接快速记录。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /** 行主体只负责选中；[onDrill] 不为 null 时，行尾独立的 48dp 箭头负责下钻。 */
 @Composable
 internal fun CategoryUsageRow(
     usage: CategoryUsage,
-    maxMillis: Long,
+    totalMillis: Long,
     riseColor: Color,
     fallColor: Color,
     selected: Boolean,
@@ -71,10 +81,15 @@ internal fun CategoryUsageRow(
 ) {
     val accent = Color(usage.colorHex)
     val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    val fraction = if (maxMillis <= 0L) {
+    val fraction = if (totalMillis <= 0L) {
         0f
     } else {
-        (usage.millis.toDouble() / maxMillis.toDouble()).toFloat().coerceIn(0.03f, 1f)
+        (usage.millis.toDouble() / totalMillis.toDouble()).toFloat().coerceIn(0.02f, 1f)
+    }
+    val percent = if (totalMillis <= 0L) {
+        0
+    } else {
+        (usage.millis.toDouble() / totalMillis.toDouble() * 100.0).roundToInt()
     }
 
     Column(
@@ -112,6 +127,13 @@ internal fun CategoryUsageRow(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = "${usage.eventCount}次",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = "$percent%",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -173,15 +195,15 @@ private fun DeltaLabel(usage: CategoryUsage, riseColor: Color, fallColor: Color)
             text = "新增",
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            color = riseColor,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
         return
     }
     val percent = ((usage.millis - previous).toDouble() / previous.toDouble() * 100.0).roundToInt()
     val text = when {
-        percent > 0 -> "+$percent%"
-        percent < 0 -> "$percent%"
+        percent > 0 -> "▲ $percent%"
+        percent < 0 -> "▼ ${-percent}%"
         else -> "0%"
     }
     val color = when {

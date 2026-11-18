@@ -21,7 +21,7 @@ internal fun DeleteRecordDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("删除这段记录？") },
-        text = { Text("记录将被永久删除，此操作无法撤销。") },
+        text = { Text("记录将被删除；关闭后仍可在底部的提示条里撤销。") },
         confirmButton = {
             TextButton(onClick = onDelete) {
                 Text("删除", color = MaterialTheme.colorScheme.error)

@@ -5,7 +5,9 @@ import androidx.compose.ui.graphics.Color
 val Paper = Color(0xFFFBFAF7)
 val PaperDark = Color(0xFF121412)
 val Ink = Color(0xFF1E211F)
-val InkMuted = Color(0xFF6E746F)
+
+/** 次要文字：在纸色上 5.15:1，能覆盖 11sp 辅助字的最低对比度要求。 */
+val InkMuted = Color(0xFF666C67)
 val Pine = Color(0xFF2F5D50)
 val PineSoft = Color(0xFFE6EFEA)
 val Clay = Color(0xFFB4654A)

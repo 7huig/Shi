@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -36,6 +40,10 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -51,8 +59,8 @@ private val EventShape = RoundedCornerShape(8.dp)
 @Composable
 fun CategoryDot(
     colorHex: Long,
-    size: Dp = 7.dp,
     modifier: Modifier = Modifier,
+    size: Dp = 7.dp,
 ) {
     Box(
         modifier = modifier
@@ -64,7 +72,8 @@ fun CategoryDot(
 
 /**
  * 时间流里的一行：左侧只在块与块的交接处显示时间，右侧是块本体。
- * 未记录的时间由虚线「未分类」块占位。
+ * 未记录的时间由虚线块占位，文案是「未记录」——它和用户真的把某段记为
+ * 「未分类」是两件事，不能共用同一个名字。
  *
  * 合并块里每条记录各自可点：重叠记录以前整块不可点，导致无法编辑，这里按事件拆开点击区域。
  */
@@ -72,8 +81,6 @@ fun CategoryDot(
 @Composable
 fun TimelineSegmentRow(
     segment: TimelineSegment,
-    uncategorizedName: String = "未分类",
-    uncategorizedColor: Long? = null,
     onEventClick: (Long) -> Unit = {},
     onEventLongClick: (Long) -> Unit = {},
     onFillGap: (() -> Unit)? = null,
@@ -82,14 +89,17 @@ fun TimelineSegmentRow(
 ) {
     val height = rememberBlockHeight(segment)
     var labelHeightPx by remember { mutableIntStateOf(0) }
-    val gapHalfPx = with(androidx.compose.ui.platform.LocalDensity.current) { 3.dp.roundToPx() }
+    val density = LocalDensity.current
+    val gapHalfPx = with(density) { 3.dp.roundToPx() }
+    // 左侧时间槽跟着系统字号变宽，避免 1.5x / 2x 时「00:50」被迫换行。
+    val gutter = (48f * density.fontScale).coerceIn(48f, 96f).dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 24.dp, end = 24.dp, top = 6.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Box(modifier = Modifier.width(48.dp).height(height)) {
+        Box(modifier = Modifier.width(gutter).height(height)) {
             Text(
                 text = DateTimeFormat.time(segment.startAt),
                 style = MaterialTheme.typography.labelSmall.copy(
@@ -117,16 +127,18 @@ fun TimelineSegmentRow(
             .weight(1f)
             .height(height)
         if (segment.isUnrecorded) {
-            // 空隙本身就是一段「未分类」时间：点它可以就地补记。
+            // 空隙本身就是一段「未记录」时间：点它可以就地补记。
             val fillable = if (onFillGap != null) {
-                blockModifier.combinedClickable(onClick = { onFillGap() }, onLongClick = {})
+                blockModifier.combinedClickable(
+                    onClickLabel = "补记这段时间",
+                    onClick = { onFillGap() },
+                    onLongClick = {},
+                )
             } else {
                 blockModifier
             }
             UnrecordedBlock(
                 segment = segment,
-                name = uncategorizedName,
-                colorHex = uncategorizedColor,
                 modifier = fillable,
             )
         } else {
@@ -152,6 +164,7 @@ fun TimelineSegmentRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RecordedBlock(
     segment: TimelineSegment,
@@ -165,7 +178,7 @@ private fun RecordedBlock(
     val border = accent.copy(alpha = if (darkTheme) 0.38f else 0.22f)
     val height = rememberBlockHeight(segment)
     val eventsHeight = recordedEventsHeight(segment)
-    val showDuration = height >= 96.dp && height >= eventsHeight + 28.dp
+    val showDuration = height >= 72.dp && height >= eventsHeight + 18.dp
 
     Box(
         modifier = modifier
@@ -198,6 +211,14 @@ private fun RecordedBlock(
                                 onClick = { onEventClick(item.event.id) },
                                 onLongClick = { onEventLongClick(item.event.id) },
                             )
+                            .semantics {
+                                customActions = listOf(
+                                    CustomAccessibilityAction("删除这段记录") {
+                                        onEventLongClick(item.event.id)
+                                        true
+                                    },
+                                )
+                            }
                             .padding(horizontal = 2.dp, vertical = 2.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -252,13 +273,14 @@ private fun RecordedBlock(
 @Composable
 private fun UnrecordedBlock(
     segment: TimelineSegment,
-    name: String,
-    colorHex: Long?,
     modifier: Modifier,
 ) {
     val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
     val height = rememberBlockHeight(segment)
     val compact = height < 48.dp
+    val showHint = height >= 48.dp
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+
     Box(
         modifier = modifier
             .background(
@@ -270,7 +292,7 @@ private fun UnrecordedBlock(
                 val path = Path().apply {
                     addRoundRect(
                         RoundRect(
-                            rect = androidx.compose.ui.geometry.Rect(
+                            rect = Rect(
                                 left = stroke / 2f,
                                 top = stroke / 2f,
                                 right = size.width - stroke / 2f,
@@ -297,49 +319,71 @@ private fun UnrecordedBlock(
             ),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (colorHex != null) {
-                    CategoryDot(colorHex = colorHex, size = 6.dp)
-                    Spacer(Modifier.width(6.dp))
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = name,
+                    text = "未记录",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontSize = 14.sp,
                         lineHeight = 19.sp,
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                    color = muted.copy(alpha = 0.9f),
                 )
+                if (height >= 62.dp) {
+                    Text(
+                        text = "空档 " + DateTimeFormat.durationText(segment.startAt, segment.endAt),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = muted.copy(alpha = 0.62f),
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
-            if (height >= 62.dp) {
-                Text(
-                    text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+            if (showHint) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        text = "补记",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                    )
+                }
             }
         }
     }
 }
 
-/** 块高按分钟数近似线性，并做上下限，避免 8 小时块占满整屏。 */
+/** 块高按分钟数近似线性，并做上下限；系统字号越大，文字需要的垂直空间越多。 */
 @Composable
 private fun rememberBlockHeight(segment: TimelineSegment): Dp {
+    val fontScale = LocalDensity.current.fontScale
+    val extra = ((fontScale - 1f).coerceAtLeast(0f) * 30f)
     val minutes = ((segment.endAt - segment.startAt).coerceAtLeast(60_000L)) / 60_000f
     return if (segment.isUnrecorded) {
-        (32f + minutes * 0.50f).coerceIn(36f, 120f).dp
+        (32f + minutes * 0.50f + extra * 0.7f).coerceIn(36f + extra * 0.7f, 120f + extra)
+            .dp
     } else {
         val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 28f
-        (58f + minutes * 0.60f + extraRows).coerceIn(62f, 220f).dp
+        (58f + minutes * 0.60f + extraRows + extra)
+            .coerceIn(62f + extra, 220f + extra * 2f)
+            .dp
     }
 }
 
-/** 估算事件区实际占用的高度，仅在确有留白时补充时长，避免重叠记录相互挤压。 */
+/** 估算事件区实际占用的高度；字体放大时同步放大，避免时长文字被挤出块外。 */
+@Composable
 private fun recordedEventsHeight(segment: TimelineSegment): Dp {
+    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
     val eventCount = segment.events.size
     val noteCount = segment.events.count { it.event.note != null }
     val gaps = (eventCount - 1).coerceAtLeast(0) * 2
-    return (12 + eventCount * 24 + noteCount * 38 + gaps).dp
+    return ((12 + eventCount * 24 + noteCount * 38 + gaps) * fontScale).dp
 }

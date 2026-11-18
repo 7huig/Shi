@@ -43,6 +43,9 @@ class TimeLogRepository(private val database: AppDatabase) {
 
     suspend fun latestEventEnd(): Long = eventDao.latestEnd()
 
+    /** 最近一条记录的分类；没有记录时为 null。 */
+    suspend fun latestCategoryId(): Long? = eventDao.latestCategoryId()
+
     /** 按备注搜索；空白关键字直接返回空列表，不查库。 */
     fun searchEvents(query: String): Flow<List<TimelineEvent>> {
         val keyword = query.trim()
@@ -141,6 +144,38 @@ class TimeLogRepository(private val database: AppDatabase) {
         eventDao.deleteById(id)
     }
 
+    /**
+     * 撤销删除：按新 id 重新插入同一条记录。
+     *
+     * 分类若在删除后也被删掉，则回落到系统「未分类」，避免撤销按钮因外键失败而失效；
+     * 不重新走重叠裁剪，撤销只应该把用户刚删的那一条原样放回去。
+     */
+    suspend fun restoreEvent(event: Event): Long = database.withTransaction {
+        val categoryId = event.categoryId.takeIf { categoryDao.getById(it) != null }
+            ?: categoryDao.getSystemCategory()?.id
+            ?: categoryDao.insert(
+                CategoryEntity(
+                    name = "未分类",
+                    parentId = null,
+                    sortOrder = categoryDao.maxSortOrder(null) + 1,
+                    colorHex = 0xFF8C928C,
+                    isSystem = true,
+                ),
+            )
+        val now = System.currentTimeMillis()
+        eventDao.insert(
+            EventEntity(
+                note = event.note.cleanNote(),
+                startAt = event.startAt,
+                endAt = event.endAt.coerceAtLeast(event.startAt + 60_000L),
+                categoryId = categoryId,
+                createdAt = event.createdAt,
+                updatedAt = now,
+                uuid = UUID.randomUUID().toString(),
+            ),
+        )
+    }
+
     suspend fun createCategory(name: String, parentId: Long?, colorHex: Long): Long {
         val order = categoryDao.maxSortOrder(parentId) + 1
         return categoryDao.insert(
@@ -187,21 +222,51 @@ class TimeLogRepository(private val database: AppDatabase) {
     }
 
     /**
-     * 删除分类时连同该分类及其子树下的事件一起删除（用户明确要求，不做迁移）。
-     * 事件外键是 RESTRICT，必须先删事件，才能删除分类；子分类由自引用外键 CASCADE 清理。
+     * 删除分类。[moveEventsToParent] 为 true 时保留子树内的事件，
+     * 改挂到该分类的父级；根分类没有父级时改挂到系统「未分类」。
+     *
+     * 事件外键是 RESTRICT，必须先处理事件，才能删除分类；子分类由自引用外键 CASCADE 清理。
      */
-    suspend fun deleteCategory(categoryId: Long): CategoryDeletionResult = database.withTransaction {
+    suspend fun deleteCategory(
+        categoryId: Long,
+        moveEventsToParent: Boolean = false,
+    ): CategoryDeletionResult = database.withTransaction {
         val all = categoryDao.getAll().map { it.toDomain() }
         val tree = buildCategoryTree(all)
         val node = tree.find(categoryId) ?: return@withTransaction CategoryDeletionResult.NotFound
         if (node.category.isSystem) return@withTransaction CategoryDeletionResult.SystemCategory
 
         val ids = tree.subtreeIds(categoryId)
-        val deletedEventCount = if (ids.isEmpty()) 0 else eventDao.deleteByCategoryIds(ids)
+        var movedEventCount = 0
+        var movedToName: String? = null
+        var deletedEventCount = 0
+        if (ids.isNotEmpty()) {
+            if (moveEventsToParent) {
+                val parentId = node.category.parentId?.takeIf { categoryDao.getById(it) != null }
+                val targetId = parentId
+                    ?: categoryDao.getSystemCategory()?.id
+                    ?: categoryDao.insert(
+                        CategoryEntity(
+                            name = "未分类",
+                            parentId = null,
+                            sortOrder = categoryDao.maxSortOrder(null) + 1,
+                            colorHex = 0xFF8C928C,
+                            isSystem = true,
+                        ),
+                    )
+                movedEventCount = eventDao.reassignByCategoryIds(ids, targetId, System.currentTimeMillis())
+                movedToName = tree.find(targetId)?.category?.name
+                    ?: categoryDao.getById(targetId)?.name
+            } else {
+                deletedEventCount = eventDao.deleteByCategoryIds(ids)
+            }
+        }
         categoryDao.deleteById(categoryId)
         CategoryDeletionResult.Deleted(
             categoryCount = ids.size,
             deletedEventCount = deletedEventCount,
+            movedEventCount = movedEventCount,
+            movedToName = movedToName,
         )
     }
 
@@ -410,7 +475,13 @@ sealed interface SaveEventResult {
 }
 
 sealed interface CategoryDeletionResult {
-    data class Deleted(val categoryCount: Int, val deletedEventCount: Int) : CategoryDeletionResult
+    data class Deleted(
+        val categoryCount: Int,
+        val deletedEventCount: Int,
+        val movedEventCount: Int = 0,
+        val movedToName: String? = null,
+    ) : CategoryDeletionResult
+
     data object NotFound : CategoryDeletionResult
     data object SystemCategory : CategoryDeletionResult
 }

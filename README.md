@@ -20,8 +20,8 @@
 | <img src="docs/screenshots/home.webp" width="320" alt="时间轴：时间块、未记录空隙与松绿新建按钮"> | <img src="docs/screenshots/stats.webp" width="320" alt="统计：环图弧段与分类用时联动"> |
 
 - **时间块时间轴**：连续展示记录与空白，点空隙即可补记；重叠记录仍可分别编辑。
-- **统计与下钻**：日／周／月／年／自定义窗口，环图选中、分类联动、层级下钻与环比。
-- **轻量记录**：三级分类三栏依次选择、分类展开收起、拖动排序、节气色板、备注搜索与命中总时长。
+- **统计与下钻**：日／周／月／年／自定义窗口，环图选中、分类联动、层级下钻、覆盖率与环比。
+- **轻量记录**：三级分类三栏依次选择、分类展开收起、拖动排序、节气色板、备注搜索与命中总时长；长按「+」可按最近分类和 15/30/45/60 分钟快速记录。
 - **本地备份**：导出 JSON；合并导入识别重复事件，也可覆盖恢复。没有账号、云端同步或网络权限。
 
 ## 安装与数据
@@ -46,7 +46,7 @@
 
 **Now**：本地数据可靠性、手机端记录与统计体验、Android 10+ 侧载使用。
 
-**Next**（候选方向，不承诺时间）：targetSdk 36、删除撤销、数据库迁移与 UI 自动化测试、平板／横屏布局。欢迎通过 [Issue](https://github.com/7huig/Shi/issues) 讨论优先级。
+**Next**（候选方向，不承诺时间）：targetSdk 36、UI 自动化测试与截图回归、平板／横屏布局、英文界面。欢迎通过 [Issue](https://github.com/7huig/Shi/issues) 讨论优先级。
 
 **Not planned**：账号体系、云端同步、广告与订阅。
 
@@ -60,7 +60,7 @@
 | UI | Jetpack Compose（BOM 2025.08.01）· Material 3 |
 | 数据 | Room 2.7.2（数据库 v5）· Coroutines 1.10.2 |
 | 架构 | MVVM + 单向数据流，纯函数 domain 层 |
-| 验证 | 113 例 JVM 单元测试（含 Room 迁移与 JSON 备份编解码）· CI test / lint / assembleDebug / assembleRelease · Pixel 6 API 31 手动验收 |
+| 验证 | 119 例 JVM 单元测试（含 Room 迁移、分类删除迁移、覆盖率与 JSON 备份编解码）· CI test / lint / assembleDebug / assembleRelease · Pixel 6 API 31 手动验收 |
 
 ## 从源码构建
 
@@ -105,7 +105,7 @@ githooks/                           # pre-commit：拦截超过 20 KiB 的代码
 ## 已知限制
 
 - 分类与环图最多展开 3 层，更深分类的时长只计入祖先。
-- 删除为硬删除，暂无回收站或撤销；分类名称不做同级重名校验。
+- 单条记录删除后可用 Snackbar 撤销；没有回收站，分类删除本身不可撤销（可以选择保留事件并移到父级）。
 - 搜索匹配备注，不含分类名或日期条件；重叠事件分别累计，总时长可能大于墙钟时长。
 - 未做平板／横屏专属布局；targetSdk 仍为 31，上架 Google Play 前需升级并重新验证。
 
@@ -119,7 +119,7 @@ githooks/                           # pre-commit：拦截超过 20 KiB 的代码
 - Explore day / week / month / year / custom windows, select ring segments, and drill into categories.
 - Export JSON before uninstalling or switching devices; local data is erased with app data.
 
-Known limits: three category levels, no undo or cloud sync, phone-first layout, targetSdk 31. See [QA / FAQ](docs/QA.md) and [source build instructions](#从源码构建).
+Known limits: three category levels, no cloud sync, phone-first layout, targetSdk 31. Single-record delete can be undone from the snackbar. See [QA / FAQ](docs/QA.md) and [source build instructions](#从源码构建).
 
 ## License
 

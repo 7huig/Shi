@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,12 +58,13 @@ private val ImportMimeTypes = arrayOf(
 fun DataTransferSection(
     viewModel: DataTransferViewModel,
     contentPadding: PaddingValues = PaddingValues(horizontal = 24.dp),
+    initiallyExpanded: Boolean = false,
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
     var showImportChooser by remember { mutableStateOf(false) }
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json"),

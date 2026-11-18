@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +42,7 @@ internal fun TimeField(
     Column {
         Row {
             Box(
-                modifier = Modifier.width(36.dp).height(48.dp),
+                modifier = Modifier.widthIn(min = 36.dp).heightIn(min = 48.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
@@ -55,7 +57,7 @@ internal fun TimeField(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             ) {
                 Box(
-                    modifier = Modifier.height(48.dp).padding(horizontal = 10.dp),
+                    modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -74,7 +76,7 @@ internal fun TimeField(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
                 ) {
                     Box(
-                        modifier = Modifier.height(48.dp).padding(horizontal = 12.dp),
+                        modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(

@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,10 +41,11 @@ import io.github.huig7.shi.util.DateTimeFormat
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 private const val RING_LAYER_COUNT = 3
-private const val RING_GAP_ANGLE = 2.5f
+private const val RING_GAP_ANGLE = 3.6f
 private const val RING_MIN_ANGLE = 1f
 
 /** 各层环带的内 / 外半径比例（相对于外接圆半径 R）。 */
@@ -71,6 +73,13 @@ internal fun RingSection(
     val isEmpty = summary.totalMillis <= 0L
     val minimumTouchRadius = with(LocalDensity.current) { 24.dp.toPx() }
     val currentOnSegmentSelected by rememberUpdatedState(onSegmentSelected)
+    val selectedPercent = selectedSegment?.let { segment ->
+        if (summary.totalMillis <= 0L) {
+            0
+        } else {
+            (segment.usage.millis.toDouble() / summary.totalMillis * 100.0).roundToInt()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -146,7 +155,7 @@ internal fun RingSection(
                 }
             }
             Column(
-                modifier = Modifier.widthIn(max = 124.dp),
+                modifier = Modifier.widthIn(max = 140.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (selectedSegment != null) {
@@ -155,7 +164,8 @@ internal fun RingSection(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(2.dp))
@@ -169,7 +179,8 @@ internal fun RingSection(
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -180,8 +191,18 @@ internal fun RingSection(
                     },
                     fontSize = 11.sp,
                     color = mutedColor,
-                    maxLines = 1,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
                 )
+                if (selectedSegment != null && selectedPercent != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "占比 $selectedPercent%",
+                        fontSize = 10.sp,
+                        color = mutedColor,
+                        maxLines = 1,
+                    )
+                }
             }
         }
         if (!isEmpty) {

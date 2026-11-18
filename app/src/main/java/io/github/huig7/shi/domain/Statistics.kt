@@ -140,6 +140,13 @@ data class StatsSummary(
     /** 等长同模式上一个窗口的总时长（对齐已过时长，见 [StatsBuilder.build]）。 */
     val previousTotalMillis: Long,
     /**
+     * 窗口内「被记录覆盖」的墙钟时长（重叠事件只算一次）。
+     * 与 [totalMillis] 不同：后者按事件累计，重叠会重复计入。
+     */
+    val coveredMillis: Long = 0L,
+    /** 窗口内已经过去的时间，用作覆盖率分母；未来窗口为 0。 */
+    val elapsedMillis: Long = 0L,
+    /**
      * 下钻聚焦的分类 ID；null 表示根层（全部分类）。
      *
      * 聚焦时 [totalMillis]、[eventCount]、[previousTotalMillis] 都换成该分类子树的口径，
@@ -186,6 +193,7 @@ object StatsBuilder {
             clip(events, previousWindow.startAt, minOf(previousWindow.endAt, now)),
             tree,
         )
+        val elapsedMillis = (minOf(window.endAt, now) - window.startAt).coerceAtLeast(0L)
 
         val currentTotals = subtreeTotals(tree, current)
         val previousTotals = subtreeTotals(tree, previous)
@@ -202,6 +210,8 @@ object StatsBuilder {
                 eventCount = current.eventCount,
                 roots = roots + orphanUsages(current, previous),
                 previousTotalMillis = previous.totalMillis,
+                coveredMillis = current.coveredMillis,
+                elapsedMillis = elapsedMillis,
             )
         }
 
@@ -217,6 +227,8 @@ object StatsBuilder {
             roots = childRoots,
             previousTotalMillis = previousTotals.millis[focus.category.id] ?: 0L,
             focusCategoryId = focus.category.id,
+            coveredMillis = current.coveredMillis,
+            elapsedMillis = elapsedMillis,
         )
     }
 
@@ -245,12 +257,19 @@ object StatsBuilder {
         val orphanCounts = HashMap<String, Int>()
         val orphanColors = HashMap<String, Long>()
         var totalMillis = 0L
+        var coveredMillis = 0L
+        var coveredUntil = Long.MIN_VALUE
 
         clipped
             .sortedWith(compareBy({ it.event.event.startAt }, { it.event.event.id }))
             .forEach { item ->
                 val duration = item.end - item.start
                 totalMillis += duration
+                // 覆盖率用并集：重叠记录只算一次墙钟时间。
+                if (item.end > coveredUntil) {
+                    coveredMillis += item.end - maxOf(item.start, coveredUntil)
+                    coveredUntil = item.end
+                }
                 val categoryId = item.event.event.categoryId
                 if (tree.find(categoryId) != null) {
                     directMillis[categoryId] = (directMillis[categoryId] ?: 0L) + duration
@@ -270,6 +289,7 @@ object StatsBuilder {
             orphanCounts = orphanCounts,
             orphanColors = orphanColors,
             totalMillis = totalMillis,
+            coveredMillis = coveredMillis,
             eventCount = clipped.size,
         )
     }
@@ -353,6 +373,7 @@ private class Aggregate(
     val orphanCounts: Map<String, Int>,
     val orphanColors: Map<String, Long>,
     val totalMillis: Long,
+    val coveredMillis: Long,
     val eventCount: Int,
 )
 

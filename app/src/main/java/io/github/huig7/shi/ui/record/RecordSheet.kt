@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -14,15 +15,22 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -53,6 +61,7 @@ fun RecordSheet(
     onStartTimeSelected: (LocalTime) -> Unit,
     onEndDateSelected: (LocalDate) -> Unit,
     onEndTimeSelected: (LocalTime) -> Unit,
+    onFillWholeGap: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
     onConfirmOverwrite: () -> Unit,
@@ -71,6 +80,12 @@ fun RecordSheet(
         "共 ${DateTimeFormat.durationText(endAt - startAt)}"
     } else {
         null
+    }
+    val title = when {
+        state.isEditing -> "编辑记录"
+        state.needsReview -> "确认这段时间"
+        state.isGapFill -> "补记这段时间"
+        else -> "记录一段"
     }
 
     ModalBottomSheet(
@@ -106,111 +121,162 @@ fun RecordSheet(
                 )
             }
         } else {
+            // 内容区滚动，底部操作条固定：小屏 / 键盘弹出时「保存」始终在手边。
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .imePadding()
-                    .navigationBarsPadding()
-                    .padding(start = 24.dp, end = 24.dp, bottom = 20.dp),
+                    .fillMaxHeight(0.93f)
+                    .imePadding(),
             ) {
-            Text(
-                text = if (state.isEditing) "编辑记录" else "记录一段",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-
-            Spacer(Modifier.height(14.dp))
-            CategoryCascadePicker(
-                tree = state.tree,
-                selectedId = state.selectedCategoryId,
-                onSelect = onCategorySelected,
-            )
-
-            Spacer(Modifier.height(16.dp))
-            TimeField(
-                label = "开始",
-                date = state.startDate,
-                time = state.startTime,
-                onDateClick = { picker = PickerTarget.StartDate },
-                onTimeClick = { picker = PickerTarget.StartTime },
-            )
-            Spacer(Modifier.height(10.dp))
-            TimeField(
-                label = "结束",
-                date = state.endDate,
-                time = state.endTime,
-                supportingText = durationLabel,
-                onDateClick = { picker = PickerTarget.EndDate },
-                onTimeClick = { picker = PickerTarget.EndTime },
-            )
-            if (state.timeError) {
-                Text(
-                    text = "结束时间需要晚于开始时间",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            state.errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-            OutlinedTextField(
-                value = state.note,
-                onValueChange = onNoteChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("请输入文本", style = MaterialTheme.typography.bodyMedium) },
-                minLines = 2,
-                maxLines = 3,
-                shape = RoundedCornerShape(14.dp),
-                textStyle = MaterialTheme.typography.bodyMedium,
-            )
-
-            Spacer(Modifier.height(18.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = requestDismiss) { Text("取消") }
-                Spacer(Modifier.weight(1f))
-                Button(
-                    onClick = onSave,
-                    enabled = state.isReady && !state.isSaving,
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.height(48.dp).widthIn(min = 112.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 24.dp, end = 24.dp, top = 2.dp),
                 ) {
-                    if (state.isSaving) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
                         )
-                    } else {
-                        Text("保存", style = MaterialTheme.typography.titleMedium)
+                        if (state.isEditing && state.isReady) {
+                            IconButton(onClick = { showDeleteConfirmation = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = "删除记录",
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                )
+                            }
+                        }
+                        IconButton(onClick = requestDismiss) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "关闭",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    if (state.needsReview) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = "这段时间和已有记录重叠；保存时相邻记录会自动让路，请先确认开始 / 结束时间。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    CategoryCascadePicker(
+                        tree = state.tree,
+                        selectedId = state.selectedCategoryId,
+                        onSelect = onCategorySelected,
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    TimeField(
+                        label = "开始",
+                        date = state.startDate,
+                        time = state.startTime,
+                        onDateClick = { picker = PickerTarget.StartDate },
+                        onTimeClick = { picker = PickerTarget.StartTime },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    TimeField(
+                        label = "结束",
+                        date = state.endDate,
+                        time = state.endTime,
+                        supportingText = durationLabel,
+                        onDateClick = { picker = PickerTarget.EndDate },
+                        onTimeClick = { picker = PickerTarget.EndTime },
+                    )
+                    if (state.wholeGapStartAt != null && state.wholeGapEndAt != null) {
+                        TextButton(
+                            onClick = onFillWholeGap,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 0.dp,
+                                vertical = 4.dp,
+                            ),
+                        ) {
+                            Text(
+                                text = "补齐整段空档（" +
+                                    DateTimeFormat.durationText(
+                                        state.wholeGapStartAt,
+                                        state.wholeGapEndAt,
+                                    ) + "）",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
+                    if (state.timeError) {
+                        Text(
+                            text = "结束时间需要晚于开始时间",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                    state.errorMessage?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = state.note,
+                        onValueChange = onNoteChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text("备注：做了什么？", style = MaterialTheme.typography.bodyMedium)
+                        },
+                        minLines = 2,
+                        maxLines = 3,
+                        shape = RoundedCornerShape(14.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                Column(modifier = Modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = requestDismiss) { Text("取消") }
+                        Spacer(Modifier.weight(1f))
+                        Button(
+                            onClick = onSave,
+                            enabled = state.isReady && !state.isSaving,
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.height(48.dp).widthIn(min = 112.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                        ) {
+                            if (state.isSaving) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                Text("保存", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
                     }
                 }
             }
-            if (state.isEditing && state.isReady) {
-                TextButton(
-                    onClick = { showDeleteConfirmation = true },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = "删除记录",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.82f),
-                    )
-                }
-            }
-        }
         }
     }
 

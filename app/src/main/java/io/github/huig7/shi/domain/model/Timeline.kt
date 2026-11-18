@@ -60,7 +60,8 @@ object TimelineBuilder {
         }
     }
 
-    private fun buildDay(
+    /** 只重建某一天：首页每分钟推进「现在」时，历史天可以复用上次结果。 */
+    fun buildDay(
         date: LocalDate,
         events: List<TimelineEvent>,
         today: LocalDate,
@@ -96,7 +97,8 @@ object TimelineBuilder {
             }
             cursor = cluster.end
         }
-        if (cursor < endLimit) {
+        if (cursor < endLimit && endLimit - cursor >= 60_000L) {
+            // 只差几秒的「到现在的尾巴」不单独占一行，避免时间轴末尾出现一个空块。
             segments += TimelineSegment(cursor, endLimit, emptyList())
         }
 

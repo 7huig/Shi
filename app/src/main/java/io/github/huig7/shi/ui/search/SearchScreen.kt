@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,7 +42,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.huig7.shi.domain.model.TimelineEvent
@@ -90,7 +99,11 @@ fun SearchScreen(
         when {
             query.isBlank() -> SearchHint()
             results.isEmpty() -> NoSearchResult(query = query)
-            else -> SearchResultList(results = results, onOpenEvent = onOpenEvent)
+            else -> SearchResultList(
+                results = results,
+                query = query,
+                onOpenEvent = onOpenEvent,
+            )
         }
     }
 }
@@ -102,6 +115,7 @@ private fun SearchBar(
     onBack: () -> Unit,
     focusRequester: FocusRequester,
 ) {
+    val focusManager = LocalFocusManager.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -148,6 +162,8 @@ private fun SearchBar(
                 }
             },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             shape = RoundedCornerShape(14.dp),
             textStyle = MaterialTheme.typography.bodyMedium,
             colors = TextFieldDefaults.colors(
@@ -166,6 +182,7 @@ private fun SearchBar(
 @Composable
 private fun SearchResultList(
     results: List<TimelineEvent>,
+    query: String,
     onOpenEvent: (Long) -> Unit,
 ) {
     LazyColumn(
@@ -195,7 +212,11 @@ private fun SearchResultList(
             }
         }
         items(items = results, key = { it.event.id }) { item ->
-            SearchResultRow(item = item, onClick = { onOpenEvent(item.event.id) })
+            SearchResultRow(
+                item = item,
+                query = query,
+                onClick = { onOpenEvent(item.event.id) },
+            )
         }
     }
 }
@@ -203,6 +224,7 @@ private fun SearchResultList(
 @Composable
 private fun SearchResultRow(
     item: TimelineEvent,
+    query: String,
     onClick: () -> Unit,
 ) {
     val event = item.event
@@ -223,7 +245,7 @@ private fun SearchResultRow(
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = event.note ?: "无备注",
+                    text = event.note?.let { highlightMatches(it, query) } ?: AnnotatedString("无备注"),
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (event.note != null) {
                         MaterialTheme.colorScheme.onSurface
@@ -267,9 +289,40 @@ private fun SearchResultRow(
     }
 }
 
+/** 把命中的关键词标出来；长备注里一眼能看到匹配位置。 */
 @Composable
-private fun SearchHint() {
-    Column(
+private fun highlightMatches(text: String, query: String): AnnotatedString {
+    val needle = query.trim()
+    if (needle.isEmpty()) return AnnotatedString(text)
+    val background = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    val color = MaterialTheme.colorScheme.onSurface
+    val lowerText = text.lowercase()
+    val lowerNeedle = needle.lowercase()
+    return buildAnnotatedString {
+        var cursor = 0
+        while (cursor < text.length) {
+            val index = lowerText.indexOf(lowerNeedle, cursor)
+            if (index < 0) {
+                append(text.substring(cursor))
+                break
+            }
+            append(text.substring(cursor, index))
+            withStyle(
+                SpanStyle(
+                    color = color,
+                    background = background,
+                    fontWeight = FontWeight.Medium,
+                ),
+            ) {
+                append(text.substring(index, index + needle.length))
+            }
+            cursor = index + needle.length
+        }
+    }
+}
+
+@Composable
+private fun SearchHint() {    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 36.dp),

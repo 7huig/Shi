@@ -18,32 +18,14 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class RecordUiState(
-    val isEditing: Boolean = false,
-    val eventId: Long? = null,
-    val note: String = "",
-    val startDate: LocalDate = LocalDate.now(DateTimeFormat.zone()),
-    val startTime: LocalTime = LocalTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0),
-    val endDate: LocalDate = LocalDate.now(DateTimeFormat.zone()),
-    val endTime: LocalTime = LocalTime.now(DateTimeFormat.zone()).withSecond(0).withNano(0),
-    val tree: CategoryTree = CategoryTree(),
-    val selectedCategoryId: Long? = null,
-    val timeError: Boolean = false,
-    val isLoading: Boolean = false,
-    val isReady: Boolean = false,
-    val isSaving: Boolean = false,
-    val saved: Boolean = false,
-    val errorMessage: String? = null,
-    val isDirty: Boolean = false,
-    val timeDirty: Boolean = false,
-    val pendingOverwrite: List<Event> = emptyList(),
-)
 
 class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
@@ -55,6 +37,9 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
     private var activeTarget: EditorTarget? = null
     private var sessionCounter = 0L
     private var pendingSave: PendingSave? = null
+
+    private val quickResults = Channel<QuickRecordResult>(Channel.BUFFERED)
+    val quickRecordResults: Flow<QuickRecordResult> = quickResults.receiveAsFlow()
 
     init {
         viewModelScope.launch {
@@ -102,6 +87,11 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
                     startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
                     endDate = endLocal.toLocalDate(),
                     endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
+                    selectedCategoryId = prefill.categoryId ?: it.selectedCategoryId,
+                    isGapFill = prefill.isGapFill,
+                    needsReview = prefill.needsReview,
+                    wholeGapStartAt = prefill.wholeGapStartAt,
+                    wholeGapEndAt = prefill.wholeGapEndAt,
                     isLoading = false,
                     isReady = true,
                 )
@@ -129,6 +119,8 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
             try {
                 val nowMillis = DateTimeFormat.toEpochMillis(now.toLocalDate(), now.toLocalTime())
                 val lastEnd = repository.latestEventEnd()
+                val lastCategory = repository.latestCategoryId()
+                    ?.takeIf { candidate -> _uiState.value.tree.find(candidate) != null }
                 val startMillis = if (lastEnd in (nowMillis - 12 * 3_600_000L)..(nowMillis - 60_000L)) {
                     lastEnd
                 } else {
@@ -137,13 +129,18 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
                 val startLocal = DateTimeFormat.toLocalDateTime(startMillis)
                 updateSession(session) { state ->
                     if (state.timeDirty) {
-                        state.copy(isLoading = false, isReady = true)
+                        state.copy(
+                            isLoading = false,
+                            isReady = true,
+                            selectedCategoryId = lastCategory ?: state.selectedCategoryId,
+                        )
                     } else {
                         state.copy(
                             startDate = startLocal.toLocalDate(),
                             startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
                             endDate = now.toLocalDate(),
                             endTime = now.toLocalTime(),
+                            selectedCategoryId = lastCategory ?: state.selectedCategoryId,
                             isLoading = false,
                             isReady = true,
                         )
@@ -268,6 +265,70 @@ class RecordViewModel(private val repository: TimeLogRepository) : ViewModel() {
                 timeError = false,
                 errorMessage = null,
             )
+        }
+    }
+
+    /** 长空档只预填了尾部时，一键把开始时间改成整段空档的起点。 */
+    fun fillWholeGap() {
+        val state = _uiState.value
+        val startAt = state.wholeGapStartAt ?: return
+        val endAt = state.wholeGapEndAt ?: return
+        val startLocal = DateTimeFormat.toLocalDateTime(startAt)
+        val endLocal = DateTimeFormat.toLocalDateTime(endAt)
+        _uiState.update {
+            it.copy(
+                startDate = startLocal.toLocalDate(),
+                startTime = startLocal.toLocalTime().withSecond(0).withNano(0),
+                endDate = endLocal.toLocalDate(),
+                endTime = endLocal.toLocalTime().withSecond(0).withNano(0),
+                wholeGapStartAt = null,
+                wholeGapEndAt = null,
+                isDirty = true,
+                timeDirty = true,
+                timeError = false,
+                errorMessage = null,
+            )
+        }
+    }
+
+    /**
+     * 快速记录：以「现在」为结束、往前 [minutes] 分钟，直接写入。
+     *
+     * 与已有记录重叠时不让用户盲选覆盖，而是把区间和分类交回完整表单确认。
+     */
+    fun quickSave(categoryId: Long, minutes: Int) {
+        if (minutes <= 0) return
+        viewModelScope.launch {
+            val endAt = System.currentTimeMillis().let { it - it % 60_000L }
+            val startAt = endAt - minutes * 60_000L
+            try {
+                val others = repository.getOverlappingEvents(startAt, endAt, -1L)
+                val plan = resolveOverlap(startAt, endAt, others)
+                if (plan.victims.isNotEmpty() || plan.updates.isNotEmpty() || plan.clones.isNotEmpty()) {
+                    // 快速记录不静默裁剪已有记录；任何重叠都回到完整表单确认时间范围。
+                    quickResults.send(
+                        QuickRecordResult.NeedsReview(startAt, endAt, categoryId),
+                    )
+                    return@launch
+                }
+                when (val result = repository.saveEventResolved(
+                    id = null,
+                    note = null,
+                    startAt = startAt,
+                    endAt = endAt,
+                    categoryId = categoryId,
+                    plan = plan,
+                )) {
+                    is SaveEventResult.Saved -> {
+                        quickResults.send(QuickRecordResult.Saved(result.id, minutes))
+                    }
+                    else -> quickResults.send(QuickRecordResult.Failed("保存失败，请重试"))
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                quickResults.send(QuickRecordResult.Failed("保存失败，请重试"))
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 package io.github.huig7.shi
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -7,25 +8,34 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,24 +43,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.ui.category.CategoryManageScreen
 import io.github.huig7.shi.ui.category.CategoryManageViewModel
+import io.github.huig7.shi.ui.data.DataBackupScreen
 import io.github.huig7.shi.ui.data.DataTransferSection
 import io.github.huig7.shi.ui.data.DataTransferViewModel
+import io.github.huig7.shi.ui.home.HomeUiEvent
 import io.github.huig7.shi.ui.home.HomeViewModel
 import io.github.huig7.shi.ui.home.TimelineFabOverlay
 import io.github.huig7.shi.ui.home.TimelinePage
+import io.github.huig7.shi.ui.record.QuickCategory
+import io.github.huig7.shi.ui.record.QuickRecordResult
+import io.github.huig7.shi.ui.record.QuickRecordSheet
 import io.github.huig7.shi.ui.record.RecordSheet
 import io.github.huig7.shi.ui.record.RecordViewModel
 import io.github.huig7.shi.ui.search.SearchScreen
@@ -58,6 +78,7 @@ import io.github.huig7.shi.ui.search.SearchViewModel
 import io.github.huig7.shi.ui.stats.StatisticsScreen
 import io.github.huig7.shi.ui.stats.StatisticsViewModel
 import io.github.huig7.shi.ui.theme.TimeLogTheme
+import io.github.huig7.shi.util.DateTimeFormat
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -73,19 +94,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val PAGE_TIMELINE = 0
-private const val PAGE_STATS = 1
-
 private const val OVERLAY_SEARCH = "search"
 private const val OVERLAY_CATEGORIES = "categories"
+private const val OVERLAY_DATA = "data"
+
+private const val PREFS_UI = "shi_ui"
+private const val KEY_ONBOARDED = "onboarded_v1"
 
 /**
  * 应用外壳：紧凑顶栏 + 左右滑动的主界面/统计页。
- * 时间轴页的「記一笔」入口是右下角蓝底白色加号的浮动按钮；搜索与分类是整屏浮层。
+ * 时间轴页的「+」单击新建、长按快速记录；搜索、分类、数据备份是整屏浮层。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimeLogApp(repository: TimeLogRepository) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_UI, Context.MODE_PRIVATE) }
     val homeViewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(repository))
     val recordViewModel: RecordViewModel = viewModel(factory = RecordViewModel.factory(repository))
     val categoryViewModel: CategoryManageViewModel = viewModel(
@@ -106,7 +130,13 @@ private fun TimeLogApp(repository: TimeLogRepository) {
 
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var overlay by rememberSaveable { mutableStateOf<String?>(null) }
+    var showQuickRecord by rememberSaveable { mutableStateOf(false) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
+    var showOnboarding by rememberSaveable {
+        mutableStateOf(!prefs.getBoolean(KEY_ONBOARDED, false))
+    }
     val editorTarget = homeState.editor
     val currentPage = pagerState.currentPage
     val closeEditor = {
@@ -124,6 +154,100 @@ private fun TimeLogApp(repository: TimeLogRepository) {
         }
     }
 
+    // 从统计页返回时先回时间轴，而不是直接退出应用。
+    BackHandler(
+        enabled = overlay == null && !showQuickRecord && currentPage != PAGE_TIMELINE,
+    ) {
+        scope.launch { pagerState.animateScrollToPage(PAGE_TIMELINE) }
+    }
+
+    // 删除 / 撤销 / 失败提示统一走 Snackbar。
+    LaunchedEffect(Unit) {
+        homeViewModel.uiEvents.collect { event ->
+            when (event) {
+                is HomeUiEvent.Deleted -> {
+                    val label = "已删除 " + event.event.categoryPath + " · " +
+                        DateTimeFormat.durationText(
+                            event.event.event.startAt,
+                            event.event.event.endAt,
+                        )
+                    val result = snackbarHostState.showSnackbar(
+                        message = label,
+                        actionLabel = "撤销",
+                        duration = SnackbarDuration.Long,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        homeViewModel.undoDelete(event.event)
+                    }
+                }
+
+                is HomeUiEvent.Restored -> {
+                    snackbarHostState.showSnackbar("已恢复这条记录")
+                }
+
+                is HomeUiEvent.Message -> {
+                    snackbarHostState.showSnackbar(event.text)
+                }
+            }
+        }
+    }
+
+    // 快速记录结果：成功可撤销；重叠时不静默覆盖，打开完整表单确认。
+    LaunchedEffect(Unit) {
+        recordViewModel.quickRecordResults.collect { result ->
+            when (result) {
+                is QuickRecordResult.Saved -> {
+                    val outcome = snackbarHostState.showSnackbar(
+                        message = "已记录 ${result.minutes} 分钟",
+                        actionLabel = "撤销",
+                        duration = SnackbarDuration.Long,
+                    )
+                    if (outcome == SnackbarResult.ActionPerformed) {
+                        homeViewModel.deleteSilently(result.eventId)
+                    }
+                }
+
+                is QuickRecordResult.NeedsReview -> {
+                    homeViewModel.openNewRecordAt(
+                        startAt = result.startAt,
+                        endAt = result.endAt,
+                        categoryId = result.categoryId,
+                        needsReview = true,
+                    )
+                }
+
+                is QuickRecordResult.Failed -> {
+                    snackbarHostState.showSnackbar(result.message)
+                }
+            }
+        }
+    }
+
+    // 最近使用的分类优先；没有历史记录时用默认叶子分类补齐，保证第一次也能快速记录。
+    val quickCategories = remember(homeState.events, categoryState.tree) {
+        val recent = homeState.events.asReversed()
+            .distinctBy { it.event.categoryId }
+            .take(5)
+            .map {
+                QuickCategory(
+                    id = it.event.categoryId,
+                    name = it.categoryPath.substringAfterLast(" / "),
+                    colorHex = it.categoryColor,
+                )
+            }
+        val defaults = categoryState.tree.flatten()
+            .filter { (node, _) -> node.children.isEmpty() }
+            .take(5)
+            .map { (node, _) ->
+                QuickCategory(
+                    id = node.category.id,
+                    name = node.category.name,
+                    colorHex = node.category.colorHex,
+                )
+            }
+        (recent + defaults).distinctBy { it.id }.take(5)
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -137,6 +261,8 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 },
                 onSearch = { overlay = OVERLAY_SEARCH },
                 onOpenCategories = { overlay = OVERLAY_CATEGORIES },
+                onOpenBackup = { overlay = OVERLAY_DATA },
+                onOpenAbout = { showAbout = true },
             )
 
             HorizontalPager(
@@ -150,9 +276,9 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                         state = homeState,
                         onEventClick = homeViewModel::openEditRecord,
                         onEventLongClick = homeViewModel::requestDelete,
-                        onFillGap = homeViewModel::openFillRecord,
-                        onDismissDelete = homeViewModel::dismissDelete,
-                        onConfirmDelete = homeViewModel::confirmDelete,
+                        onFillGap = homeViewModel::openFillGap,
+                        onNewRecord = homeViewModel::openNewRecord,
+                        snackbarHostState = snackbarHostState,
                     )
 
                     else -> StatisticsScreen(
@@ -164,6 +290,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                         onCategoryDrilled = statisticsViewModel::drillInto,
                         onDrillUp = statisticsViewModel::drillUp,
                         onCrumbSelected = statisticsViewModel::focusAt,
+                        onToday = statisticsViewModel::goToday,
                         footer = { DataTransferSection(viewModel = transferViewModel) },
                     )
                 }
@@ -172,8 +299,20 @@ private fun TimeLogApp(repository: TimeLogRepository) {
 
         // 浮动「+」入口：叠在内容之上，不占用列表高度；只在時記页显示。
         if (currentPage == PAGE_TIMELINE) {
-            TimelineFabOverlay(onNewRecord = homeViewModel::openNewRecord)
+            TimelineFabOverlay(
+                onNewRecord = homeViewModel::openNewRecord,
+                onQuickRecord = { showQuickRecord = true },
+            )
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 92.dp)
+                .navigationBarsPadding(),
+        )
 
         if (overlay == OVERLAY_SEARCH) {
             Surface(modifier = Modifier.fillMaxSize()) {
@@ -203,11 +342,19 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 onEditorSave = categoryViewModel::saveEditor,
                 onDeleteDismiss = categoryViewModel::dismissDelete,
                 onDeleteConfirm = categoryViewModel::confirmDelete,
+                onDeleteMoveEvents = categoryViewModel::confirmDeleteMovingEvents,
                 onMove = categoryViewModel::moveCategory,
                 onToggleExpanded = categoryViewModel::toggleExpanded,
                 onExpandAll = { categoryViewModel.expandAll() },
                 onCollapseAll = { categoryViewModel.collapseAll() },
                 onMessageShown = categoryViewModel::consumeMessage,
+            )
+        }
+
+        if (overlay == OVERLAY_DATA) {
+            DataBackupScreen(
+                viewModel = transferViewModel,
+                onBack = { overlay = null },
             )
         }
     }
@@ -222,6 +369,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
             onStartTimeSelected = recordViewModel::onStartTimeSelected,
             onEndDateSelected = recordViewModel::onEndDateSelected,
             onEndTimeSelected = recordViewModel::onEndTimeSelected,
+            onFillWholeGap = recordViewModel::fillWholeGap,
             onSave = recordViewModel::save,
             onDelete = {
                 recordState.eventId?.let { eventId ->
@@ -233,62 +381,41 @@ private fun TimeLogApp(repository: TimeLogRepository) {
             onCancelOverwrite = recordViewModel::dismissOverwrite,
         )
     }
-}
 
-/** 紧凑顶栏：两个页签同为 23sp serif 样式，选中的用墨色、未选的用次要色。 */
-@Composable
-private fun AppHeader(
-    page: Int,
-    onSelectPage: (Int) -> Unit,
-    onSearch: () -> Unit,
-    onOpenCategories: () -> Unit,
-) {
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val active = MaterialTheme.colorScheme.onBackground
-    val tabStyle = MaterialTheme.typography.headlineMedium.copy(
-        fontSize = 23.sp,
-        lineHeight = 28.sp,
-    )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 22.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "時記",
-            style = tabStyle,
-            color = if (page == PAGE_TIMELINE) active else muted,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { onSelectPage(PAGE_TIMELINE) }
-                .padding(horizontal = 4.dp, vertical = 10.dp),
+    if (showQuickRecord) {
+        QuickRecordSheet(
+            categories = quickCategories,
+            defaultCategoryId = homeState.events.lastOrNull()?.event?.categoryId,
+            onDismiss = { showQuickRecord = false },
+            onSave = { categoryId, minutes ->
+                showQuickRecord = false
+                recordViewModel.quickSave(categoryId, minutes)
+            },
+            onOpenFullForm = { categoryId, minutes ->
+                showQuickRecord = false
+                val endAt = System.currentTimeMillis()
+                homeViewModel.openNewRecordAt(
+                    startAt = endAt - minutes * 60_000L,
+                    endAt = endAt,
+                    categoryId = categoryId,
+                )
+            },
         )
-        Spacer(Modifier.width(16.dp))
-        Text(
-            text = "時計",
-            style = tabStyle,
-            color = if (page == PAGE_STATS) active else muted,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { onSelectPage(PAGE_STATS) }
-                .padding(horizontal = 4.dp, vertical = 10.dp),
+    }
+
+    if (showAbout) {
+        AboutDialog(
+            version = appVersion(context),
+            onDismiss = { showAbout = false },
         )
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onSearch) {
-            Icon(
-                imageVector = Icons.Rounded.Search,
-                contentDescription = "搜索备注",
-                tint = muted,
-            )
-        }
-        TextButton(onClick = onOpenCategories) {
-            Text(
-                text = "分类",
-                style = MaterialTheme.typography.labelLarge,
-                color = muted,
-            )
-        }
+    }
+
+    if (showOnboarding) {
+        OnboardingDialog(
+            onDone = {
+                prefs.edit { putBoolean(KEY_ONBOARDED, true) }
+                showOnboarding = false
+            },
+        )
     }
 }

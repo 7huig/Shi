@@ -31,11 +31,11 @@ object DateTimeFormat {
 
     fun monthDay(date: LocalDate): String = date.format(shortMonthDayFormatter)
 
-    /** 主界面日期标题：今天/昨天，其余只显示「M月d日」，不显示年份与星期。 */
+    /** 主界面日期标题：今天/昨天保留相对称呼，但仍带日期，和统计页的日期语法保持一致。 */
     fun sectionTitle(date: LocalDate, today: LocalDate = LocalDate.now(zone())): String =
         when (date) {
-            today -> "今天"
-            today.minusDays(1) -> "昨天"
+            today -> "今天 · " + monthDay(date)
+            today.minusDays(1) -> "昨天 · " + monthDay(date)
             else -> monthDay(date)
         }
 
@@ -74,7 +74,8 @@ object DateTimeFormat {
         durationText((endAt - startAt).coerceAtLeast(60_000L))
 
     fun durationText(millis: Long): String {
-        val totalMinutes = (millis / 60_000L).coerceAtLeast(1L)
+        // 四舍五入到分钟：统计裁剪到「现在」时可能只差几秒，30 分钟的块不应该显示成 29 分钟。
+        val totalMinutes = ((millis + 30_000L) / 60_000L).coerceAtLeast(1L)
         val hours = totalMinutes / 60L
         val minutes = totalMinutes % 60L
         return when {

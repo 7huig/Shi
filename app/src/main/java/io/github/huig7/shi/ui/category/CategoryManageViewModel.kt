@@ -30,6 +30,8 @@ data class CategoryEditor(
 data class PendingCategoryDelete(
     val node: CategoryNode,
     val eventCount: Int,
+    /** 保留记录时改挂到谁：父分类名，根分类则是系统「未分类」。 */
+    val moveTargetName: String,
 )
 
 data class CategoryManageUiState(
@@ -170,7 +172,22 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         viewModelScope.launch {
             try {
                 val count = repository.countEventsInSubtree(node.category.id)
-                transient.update { it.copy(pendingDelete = PendingCategoryDelete(node, count)) }
+                val tree = uiState.value.tree
+                val targetName = node.category.parentId
+                    ?.let { tree.find(it)?.category?.name }
+                    ?: tree.flatten()
+                        .firstOrNull { (candidate, _) -> candidate.category.isSystem }
+                        ?.first?.category?.name
+                    ?: "未分类"
+                transient.update {
+                    it.copy(
+                        pendingDelete = PendingCategoryDelete(
+                            node = node,
+                            eventCount = count,
+                            moveTargetName = targetName,
+                        ),
+                    )
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -184,17 +201,33 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
     }
 
     fun confirmDelete() {
+        deleteCategory(moveEventsToParent = false)
+    }
+
+    /** 删除分类但保留记录：事件改挂到父分类 / 未分类。 */
+    fun confirmDeleteMovingEvents() {
+        deleteCategory(moveEventsToParent = true)
+    }
+
+    private fun deleteCategory(moveEventsToParent: Boolean) {
         val pending = transient.value.pendingDelete ?: return
         viewModelScope.launch {
             try {
-                val message = when (val outcome = repository.deleteCategory(pending.node.category.id)) {
-                    is CategoryDeletionResult.Deleted -> {
-                        val deleted = if (outcome.deletedEventCount > 0) {
-                            "，${outcome.deletedEventCount} 条事件"
-                        } else {
-                            ""
+                val message = when (
+                    val outcome = repository.deleteCategory(
+                        pending.node.category.id,
+                        moveEventsToParent = moveEventsToParent,
+                    )
+                ) {
+                    is CategoryDeletionResult.Deleted -> buildString {
+                        append("已删除 ").append(outcome.categoryCount).append(" 个分类")
+                        if (outcome.deletedEventCount > 0) {
+                            append("，").append(outcome.deletedEventCount).append(" 条事件")
                         }
-                        "已删除 ${outcome.categoryCount} 个分类$deleted"
+                        if (outcome.movedEventCount > 0) {
+                            append("，").append(outcome.movedEventCount).append(" 条记录移到「")
+                            append(outcome.movedToName ?: "未分类").append("」")
+                        }
                     }
 
                     CategoryDeletionResult.NotFound -> "分类已不存在"

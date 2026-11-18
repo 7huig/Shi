@@ -42,6 +42,8 @@ data class StatisticsUiState(
     val window: StatsWindow? = null,
     val label: String = "",
     val canGoNext: Boolean = false,
+    /** 当前窗口是否就是「今天 / 本周 / 本月 / 今年」；用于决定是否显示「今天」按钮。 */
+    val canGoToday: Boolean = false,
     val customRange: Pair<LocalDate, LocalDate>? = null,
     val summary: StatsSummary? = null,
     /** 下钻路径（自根分类到当前聚焦分类）；空表示根层。 */
@@ -114,6 +116,13 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
             window = window,
             label = statsLabel(window, now, zone),
             canGoNext = StatsWindows.shift(window, 1, zone).startAt <= now,
+            canGoToday = when (window.mode) {
+                StatsMode.CUSTOM -> {
+                    val range = control.customRange
+                    range == null || range.first != today || range.second != today
+                }
+                else -> window.startAt != StatsWindows.of(window.mode, today, zone).startAt
+            },
             customRange = control.customRange,
             summary = summary,
             // 分类被删除等情况下 build 会退回根层，面包屑跟随实际生效的聚焦分类。
@@ -167,6 +176,19 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
         val target = StatsWindows.shift(currentWindow(zone, today), 1, zone)
         if (target.startAt > now) return
         applyWindow(target, zone)
+    }
+
+    /** 回到今天：清空下钻和窗口锚点；自定义区间回到「仅今天」。 */
+    fun goToday() {
+        val zone = DateTimeFormat.zone()
+        val today = StatsWindows.dateOf(System.currentTimeMillis(), zone)
+        focusPath.value = emptyList()
+        if (selectedMode.value == StatsMode.CUSTOM) {
+            selectedCustomRange.value = today to today
+            anchorDate.value = today
+        } else {
+            anchorDate.value = null
+        }
     }
 
     /** 进入某个分类的直接下一级；点击行时只会传入当前层可下钻的分类。 */

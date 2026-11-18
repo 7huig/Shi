@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -128,7 +129,10 @@ private fun CascadeColumn(
             .padding(horizontal = 4.dp, vertical = 8.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(22.dp).padding(horizontal = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 22.dp)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -140,7 +144,7 @@ private fun CascadeColumn(
             // 数量让用户知道这一栏还有多少项藏在滚动区里（真实数据可能有 6 个子分类）。
             if (level.options.isNotEmpty()) {
                 Text(
-                    text = level.options.size.toString(),
+                    text = "${level.options.size} 项",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
@@ -196,7 +200,7 @@ private fun CascadeOptionRow(
     val color = Color(option.category.colorHex)
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(40.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
         shape = OptionShape,
         color = if (selected) color.copy(alpha = 0.16f) else Color.Transparent,
         border = if (selected) BorderStroke(1.dp, color.copy(alpha = 0.55f)) else null,

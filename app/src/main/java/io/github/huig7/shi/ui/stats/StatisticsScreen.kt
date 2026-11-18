@@ -1,6 +1,8 @@
 package io.github.huig7.shi.ui.stats
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
@@ -28,22 +31,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.huig7.shi.domain.StatsMode
-import io.github.huig7.shi.ui.common.DatePickerSheet
+import io.github.huig7.shi.ui.common.DateRangePickerSheet
 import io.github.huig7.shi.ui.theme.FallGreen
 import io.github.huig7.shi.ui.theme.FallGreenDark
 import io.github.huig7.shi.ui.theme.RiseRed
 import io.github.huig7.shi.ui.theme.RiseRedDark
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.LocalDate
-
-/** 自定义时间段需要连续弹两次日期选择：先起始日，再结束日。 */
-private enum class DatePickerStep { START, END }
+import kotlin.math.roundToInt
 
 /** 下钻层数上限：环形图最多三层（见 [io.github.huig7.shi.domain.StatsBuilder.MAX_DEPTH]），最多再进入两级。 */
 private const val MAX_DRILL_LEVELS = 2
@@ -62,6 +64,7 @@ fun StatisticsScreen(
     onModeSelected: (StatsMode) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onToday: () -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     onCategoryDrilled: (Long) -> Unit,
     onDrillUp: () -> Unit,
@@ -69,8 +72,7 @@ fun StatisticsScreen(
     footer: @Composable () -> Unit = {},
 ) {
     val summary = state.summary
-    var pickerStep by remember { mutableStateOf<DatePickerStep?>(null) }
-    var pendingStart by remember { mutableStateOf<LocalDate?>(null) }
+    var showRangePicker by remember { mutableStateOf(false) }
     // 窗口或下钻层级改变时立即回到总览；普通数据刷新保留当前选中。
     var selectedRingPath by remember(state.window, state.focusPath) {
         mutableStateOf<List<Int>?>(null)
@@ -82,8 +84,7 @@ fun StatisticsScreen(
     val today = LocalDate.now(DateTimeFormat.zone())
 
     fun openCustomRangePicker() {
-        pendingStart = null
-        pickerStep = DatePickerStep.START
+        showRangePicker = true
     }
 
     Column(
@@ -101,8 +102,10 @@ fun StatisticsScreen(
             label = state.label,
             mode = state.mode,
             canGoNext = state.canGoNext,
+            canGoToday = state.canGoToday,
             onPrevious = onPrevious,
             onNext = onNext,
+            onToday = onToday,
             onEditCustomRange = ::openCustomRangePicker,
         )
         if (state.focusPath.isNotEmpty()) {
@@ -112,9 +115,15 @@ fun StatisticsScreen(
                 onCrumbSelected = onCrumbSelected,
             )
         }
+        summary?.let {
+            if (it.totalMillis > 0L && it.elapsedMillis > 0L) {
+                CoverageSection(summary = it)
+            }
+        }
         when {
             state.isLoading -> Unit
             summary == null -> Unit
+            summary.totalMillis <= 0L -> EmptyStats()
             else -> {
                 val segments = remember(summary) { buildRingSegments(summary.roots) }
                 val selectedSegment = selectedRingPath?.let { path ->
@@ -128,31 +137,26 @@ fun StatisticsScreen(
                         selectedRingPath = if (selectedRingPath == path) null else path
                     },
                 )
-                if (summary.totalMillis <= 0L) {
-                    EmptyStats()
+                SectionHeader("分类用时")
+                // 环形图最多三层，因此最多再下钻两级；行主体选中，独立箭头下钻。
+                val canDrillFurther = state.focusPath.size < MAX_DRILL_LEVELS
+                if (summary.roots.isEmpty() && state.focusPath.isNotEmpty()) {
+                    DrillEmptyHint()
                 } else {
-                    SectionHeader("分类用时")
-                    // 环形图最多三层，因此最多再下钻两级；行主体选中，独立箭头下钻。
-                    val canDrillFurther = state.focusPath.size < MAX_DRILL_LEVELS
-                    val maxMillis = summary.roots.maxOfOrNull { it.millis } ?: 1L
-                    if (summary.roots.isEmpty() && state.focusPath.isNotEmpty()) {
-                        DrillEmptyHint()
-                    } else {
-                        summary.roots.forEachIndexed { index, root ->
-                            val drillable = canDrillFurther && root.children.isNotEmpty()
-                            CategoryUsageRow(
-                                usage = root,
-                                maxMillis = maxMillis,
-                                riseColor = riseColor,
-                                fallColor = fallColor,
-                                selected = selectedSegment?.path?.firstOrNull() == index,
-                                onSelect = {
-                                    val rootPath = listOf(index)
-                                    selectedRingPath = if (selectedRingPath == rootPath) null else rootPath
-                                },
-                                onDrill = if (drillable) onCategoryDrilled else null,
-                            )
-                        }
+                    summary.roots.forEachIndexed { index, root ->
+                        val drillable = canDrillFurther && root.children.isNotEmpty()
+                        CategoryUsageRow(
+                            usage = root,
+                            totalMillis = summary.totalMillis,
+                            riseColor = riseColor,
+                            fallColor = fallColor,
+                            selected = selectedSegment?.path?.firstOrNull() == index,
+                            onSelect = {
+                                val rootPath = listOf(index)
+                                selectedRingPath = if (selectedRingPath == rootPath) null else rootPath
+                            },
+                            onDrill = if (drillable) onCategoryDrilled else null,
+                        )
                     }
                 }
             }
@@ -161,30 +165,61 @@ fun StatisticsScreen(
         footer()
     }
 
-    when (pickerStep) {
-        DatePickerStep.START -> DatePickerSheet(
-            initialDate = state.customRange?.first ?: today,
-            onDismiss = { pickerStep = null },
-            onConfirm = { date ->
-                pendingStart = date
-                pickerStep = DatePickerStep.END
+    if (showRangePicker) {
+        DateRangePickerSheet(
+            initialStart = state.customRange?.first ?: today.minusDays(6),
+            initialEnd = state.customRange?.second ?: today,
+            onDismiss = { showRangePicker = false },
+            onConfirm = { start, end ->
+                showRangePicker = false
+                onCustomRangeSelected(start, end)
             },
         )
-        DatePickerStep.END -> DatePickerSheet(
-            initialDate = pendingStart ?: state.customRange?.second ?: today,
-            onDismiss = { pickerStep = null },
-            onConfirm = { end ->
-                val start = pendingStart ?: end
-                pendingStart = null
-                pickerStep = null
-                if (end.isBefore(start)) {
-                    onCustomRangeSelected(end, start)
-                } else {
-                    onCustomRangeSelected(start, end)
-                }
-            },
-        )
-        null -> Unit
+    }
+}
+
+/** 窗口内有记录的墙钟占比：把「已记录」和「一天 / 一周」分开，避免把环图的满圆误读成整天。 */
+@Composable
+private fun CoverageSection(summary: io.github.huig7.shi.domain.StatsSummary) {
+    val elapsed = summary.elapsedMillis
+    if (elapsed <= 0L) return
+    val ratio = (summary.coveredMillis.toDouble() / elapsed.toDouble()).toFloat().coerceIn(0f, 1f)
+    val percent = (ratio * 100f).roundToInt()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "已记录 $percent%",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = DateTimeFormat.durationText(summary.coveredMillis) + " / " +
+                    DateTimeFormat.durationText(elapsed),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(ratio)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
     }
 }
 
@@ -231,8 +266,10 @@ private fun RangeNav(
     label: String,
     mode: StatsMode,
     canGoNext: Boolean,
+    canGoToday: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onToday: () -> Unit,
     onEditCustomRange: () -> Unit,
 ) {
     Row(
@@ -273,12 +310,27 @@ private fun RangeNav(
                     )
                 }
             }
-        }
+            if (canGoToday) {
+                TextButton(
+                    onClick = onToday,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                ) {
+                    Text(
+                        text = "今天",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }        }
         IconButton(onClick = onNext, enabled = canGoNext) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                 contentDescription = "下一个周期",
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = if (canGoNext) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f)
+                },
             )
         }
     }
