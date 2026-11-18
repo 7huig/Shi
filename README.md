@@ -2,12 +2,12 @@
 
 > 纯本地、无账号、无联网权限的 Android 时间记录器：用时间块和多层环图记录、复盘一天。
 
-[![Release](https://img.shields.io/badge/release-0.2.3-2F5D50)](https://github.com/7huig/Shi/releases/tag/v0.2.3)
+[![Release](https://img.shields.io/badge/release-0.3.0-2F5D50)](https://github.com/7huig/Shi/releases/tag/v0.3.0)
 [![Android CI](https://github.com/7huig/Shi/actions/workflows/android.yml/badge.svg)](https://github.com/7huig/Shi/actions/workflows/android.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![minSdk 29](https://img.shields.io/badge/Android-10%2B-brightgreen.svg)](https://developer.android.com/about/versions/android-10)
 
-**[下载 Shi 0.2.3 APK](https://github.com/7huig/Shi/releases/download/v0.2.3/Shi-0.2.3.apk)** · Android 10+ · 约 3.0 MB · 无广告
+**[下载 Shi 0.3.0 APK](https://github.com/7huig/Shi/releases/download/v0.3.0/Shi-0.3.0.apk)** · Android 10+ · 约 3.1 MB · 无广告
 
 [全部版本与校验值](https://github.com/7huig/Shi/releases) · [English Quick Start](#english-quick-start) · [验收与 FAQ](docs/QA.md)
 
@@ -22,6 +22,7 @@
 - **时间块时间轴**：连续展示记录与空白，点空隙即可补记；重叠记录仍可分别编辑。
 - **统计与下钻**：日／周／月／年／自定义窗口，环图选中、分类联动、层级下钻、覆盖率与环比。
 - **轻量记录**：三级分类三栏依次选择、分类展开收起、拖动排序、节气色板、备注搜索与命中总时长；长按「+」可按最近分类和 15/30/45/60 分钟快速记录。
+- **分类调整**：子分类可升为顶层，父分类可移到其他分类下（含子树整体移动，仍限 3 层）；搜索页支持只按分类筛选，所选分类包含整棵子树。
 - **本地备份**：导出 JSON；合并导入识别重复事件，也可覆盖恢复。没有账号、云端同步或网络权限。
 
 ## 安装与数据
@@ -54,13 +55,13 @@
 
 | 项目 | 版本 / 取值 |
 | --- | --- |
-| 应用版本 | 0.2.3（versionCode 10） |
+| 应用版本 | 0.3.0（versionCode 12） |
 | Android | minSdk 29 · targetSdk 31 · compileSdk 36 |
 | 语言与工具 | Kotlin 2.2.10 · Gradle 9.1.0 · AGP 9.0.1 · JDK 17 |
 | UI | Jetpack Compose（BOM 2025.08.01）· Material 3 |
-| 数据 | Room 2.7.2（数据库 v5）· Coroutines 1.10.2 |
+| 数据 | Room 2.7.2（数据库 v6）· Coroutines 1.10.2 |
 | 架构 | MVVM + 单向数据流，纯函数 domain 层 |
-| 验证 | 119 例 JVM 单元测试（含 Room 迁移、分类删除迁移、覆盖率与 JSON 备份编解码）· CI test / lint / assembleDebug / assembleRelease · Pixel 6 API 31 手动验收 |
+| 验证 | JVM 单元测试（含 Room 迁移、分类跨层级移动、搜索筛选、覆盖率与 JSON 备份编解码）· CI test / lint / assembleDebug / assembleRelease · Pixel 6 API 31 手动验收 |
 
 ## 从源码构建
 
@@ -96,7 +97,7 @@ app/src/main/java/io/github/huig7/shi/
 ├── domain/                        # 时间轴、重叠、统计、分类树等纯函数
 ├── ui/                            # home / record / stats / category / search / data
 └── util/DateTimeFormat.kt
-app/src/test/java/io/github/huig7/shi/          # 113 个 JVM 单元测试（domain / 备份 / 迁移）
+app/src/test/java/io/github/huig7/shi/          # JVM 单元测试（domain / 备份 / 迁移 / 分类与搜索）
 app/schemas/                                    # Room 导出的 schema JSON，迁移测试据此校验
 design/icons/                       # 墨時图标与可复现渲染脚本
 githooks/                           # pre-commit：拦截超过 20 KiB 的代码文件
@@ -104,16 +105,16 @@ githooks/                           # pre-commit：拦截超过 20 KiB 的代码
 
 ## 已知限制
 
-- 分类与环图最多展开 3 层，更深分类的时长只计入祖先。
-- 单条记录删除后可用 Snackbar 撤销；没有回收站，分类删除本身不可撤销（可以选择保留事件并移到父级）。
-- 搜索匹配备注，不含分类名或日期条件；重叠事件分别累计，总时长可能大于墙钟时长。
+- 分类与环图最多 3 层；移动分类时会校验整棵子树，避免超层。
+- 单条记录删除后可用 Snackbar 撤销；没有回收站，分类删除本身不可撤销（可以选择保留事件并移到父级或其他分类）。
+- 搜索匹配备注，分类筛选按分类树生效；仍不支持日期条件。重叠事件分别累计，总时长可能大于墙钟时长。
 - 未做平板／横屏专属布局；targetSdk 仍为 31，上架 Google Play 前需升级并重新验证。
 
 ## English Quick Start
 
 **Shi (時)** is a local-only Android time logger with a continuous block timeline and interactive multi-ring statistics. No account, ads, network permission, or cloud sync.
 
-**[Download Shi 0.2.3 APK](https://github.com/7huig/Shi/releases/download/v0.2.3/Shi-0.2.3.apk)** · Android 10+ · about 3.0 MB · [Release notes & checksum](https://github.com/7huig/Shi/releases/tag/v0.2.3)
+**[Download Shi 0.3.0 APK](https://github.com/7huig/Shi/releases/download/v0.3.0/Shi-0.3.0.apk)** · Android 10+ · about 3.1 MB · [Release notes & checksum](https://github.com/7huig/Shi/releases/tag/v0.3.0)
 
 - Record and edit time blocks, fill gaps, and search notes with total duration.
 - Explore day / week / month / year / custom windows, select ring segments, and drill into categories.

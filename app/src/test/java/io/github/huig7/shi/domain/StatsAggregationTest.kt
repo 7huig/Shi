@@ -124,6 +124,6 @@ class StatsAggregationTest : StatisticsTestFixtures() {
     @Test
     fun blankCategoryPathFallsBackToUnknownName() {
         val summary = build(event(1, "2026-11-01T08:00", "2026-11-01T09:00", categoryId = 99L, path = ""))
-        assertEquals("未分类", summary.roots.single().name)
+        assertEquals("未知分类", summary.roots.single().name)
     }
 }

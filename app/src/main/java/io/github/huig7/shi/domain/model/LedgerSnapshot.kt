@@ -15,7 +15,13 @@ data class ExportedCategory(
     val parentId: Long?,
     val sortOrder: Int,
     val colorHex: Long,
-    val isSystem: Boolean,
+    /**
+     * schema 2 及更早版本用来标记系统分类的字段，现已不再写 true。
+     *
+     * 保留它是为了继续读写旧备份：导入旧文件时会跳过没有被事件引用的系统「未分类」，
+     * 避免升级后把已经删掉的分类又恢复出来。
+     */
+    val isSystem: Boolean = false,
 )
 
 data class ExportedEvent(

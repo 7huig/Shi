@@ -62,7 +62,6 @@ import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.ui.category.CategoryManageScreen
 import io.github.huig7.shi.ui.category.CategoryManageViewModel
 import io.github.huig7.shi.ui.data.DataBackupScreen
-import io.github.huig7.shi.ui.data.DataTransferSection
 import io.github.huig7.shi.ui.data.DataTransferViewModel
 import io.github.huig7.shi.ui.home.HomeUiEvent
 import io.github.huig7.shi.ui.home.HomeViewModel
@@ -291,7 +290,6 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                         onDrillUp = statisticsViewModel::drillUp,
                         onCrumbSelected = statisticsViewModel::focusAt,
                         onToday = statisticsViewModel::goToday,
-                        footer = { DataTransferSection(viewModel = transferViewModel) },
                     )
                 }
             }
@@ -338,6 +336,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 onDelete = categoryViewModel::requestDelete,
                 onEditorNameChange = categoryViewModel::onEditorNameChange,
                 onEditorColorChange = categoryViewModel::onEditorColorChange,
+                onEditorParentChange = categoryViewModel::onEditorParentChange,
                 onEditorDismiss = categoryViewModel::dismissEditor,
                 onEditorSave = categoryViewModel::saveEditor,
                 onDeleteDismiss = categoryViewModel::dismissDelete,

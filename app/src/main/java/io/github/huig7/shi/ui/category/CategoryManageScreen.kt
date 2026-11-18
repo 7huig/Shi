@@ -57,11 +57,12 @@ fun CategoryManageScreen(
     onDelete: (CategoryNode) -> Unit,
     onEditorNameChange: (String) -> Unit,
     onEditorColorChange: (Long) -> Unit,
+    onEditorParentChange: (Long?) -> Unit,
     onEditorDismiss: () -> Unit,
     onEditorSave: () -> Unit,
     onDeleteDismiss: () -> Unit,
     onDeleteConfirm: () -> Unit,
-    onDeleteMoveEvents: () -> Unit,
+    onDeleteMoveEvents: (Long) -> Unit,
     onMove: (Long, Int) -> Unit,
     onToggleExpanded: (Long) -> Unit,
     onExpandAll: () -> Unit,
@@ -129,10 +130,10 @@ fun CategoryManageScreen(
             val siblingIds = siblings.map { it.node.category.id }
             val firstVisibleIndex = visible.first().index
             val visibleByIndex = visible.associateBy { it.index }
-            // 兄弟中心用布局目标位置（第 0 项是提示文案，所以行下标 + 1）；
+            // 兄弟中心用布局目标位置（列表现在从第 0 项起就是分类行，行下标即 LazyColumn 下标）；
             // 视口之外的兄弟用正负 Float.MAX_VALUE 占位，保证边界处不跳。
             val centers = siblings.map { row ->
-                val lazyIndex = (currentRowIndexById[row.node.category.id] ?: -1) + 1
+                val lazyIndex = currentRowIndexById[row.node.category.id] ?: -1
                 val item = visibleByIndex[lazyIndex]
                 when {
                     item != null -> item.offset + item.size / 2f
@@ -226,17 +227,8 @@ fun CategoryManageScreen(
                     .padding(innerPadding)
                     .onGloballyPositioned { listWindowTop[0] = it.boundsInWindow().top },
                 state = listState,
-                contentPadding = PaddingValues(bottom = 16.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
             ) {
-                item(key = "hint") {
-                    Text(
-                        text = "点箭头展开或收起；按住右侧手柄上下拖动，可调整同级顺序。" +
-                            "最多 3 层；删除分类时可以选择一并删除事件，或保留事件并移到父级。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 4.dp, bottom = 8.dp),
-                    )
-                }
                 items(
                     items = rows,
                     key = { it.node.category.id },
@@ -302,8 +294,10 @@ fun CategoryManageScreen(
     state.editor?.let { editor ->
         CategoryEditorDialog(
             editor = editor,
+            tree = state.tree,
             onNameChange = onEditorNameChange,
             onColorChange = onEditorColorChange,
+            onParentChange = onEditorParentChange,
             onDismiss = onEditorDismiss,
             onSave = onEditorSave,
         )
@@ -312,6 +306,7 @@ fun CategoryManageScreen(
     state.pendingDelete?.let { pending ->
         CategoryDeleteDialog(
             pending = pending,
+            tree = state.tree,
             onDismiss = onDeleteDismiss,
             onConfirm = onDeleteConfirm,
             onMoveEvents = onDeleteMoveEvents,

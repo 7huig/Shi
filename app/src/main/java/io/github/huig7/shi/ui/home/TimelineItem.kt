@@ -176,9 +176,6 @@ private fun RecordedBlock(
     val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val background = accent.copy(alpha = if (darkTheme) 0.20f else 0.09f)
     val border = accent.copy(alpha = if (darkTheme) 0.38f else 0.22f)
-    val height = rememberBlockHeight(segment)
-    val eventsHeight = recordedEventsHeight(segment)
-    val showDuration = height >= 72.dp && height >= eventsHeight + 18.dp
 
     Box(
         modifier = modifier
@@ -252,20 +249,19 @@ private fun RecordedBlock(
                     }
                 }
             }
-            if (showDuration) {
-                Text(
-                    text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-                    maxLines = 1,
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(top = 4.dp),
-                )
-            }
+            // 块高已经为时长行预留空间（见 rememberBlockHeight），这里始终显示，备注再多也不会被挤掉。
+            Text(
+                text = DateTimeFormat.durationText(segment.startAt, segment.endAt),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 4.dp),
+            )
         }
     }
 }
@@ -361,29 +357,37 @@ private fun UnrecordedBlock(
     }
 }
 
-/** 块高按分钟数近似线性，并做上下限；系统字号越大，文字需要的垂直空间越多。 */
+/**
+ * 块高按分钟数近似线性，并做上下限；系统字号越大，文字需要的垂直空间越多。
+ *
+ * 时间比例只决定「看起来多长」，不能压过内容本身：块高还要不小于
+ * 分类行 + 备注（最多两行）+ 时长行所需高度，否则有备注的事件会把时长挤出块外。
+ */
 @Composable
 private fun rememberBlockHeight(segment: TimelineSegment): Dp {
-    val fontScale = LocalDensity.current.fontScale
-    val extra = ((fontScale - 1f).coerceAtLeast(0f) * 30f)
+    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val extra = (fontScale - 1f) * 30f
     val minutes = ((segment.endAt - segment.startAt).coerceAtLeast(60_000L)) / 60_000f
     return if (segment.isUnrecorded) {
         (32f + minutes * 0.50f + extra * 0.7f).coerceIn(36f + extra * 0.7f, 120f + extra)
             .dp
     } else {
         val extraRows = (segment.events.size - 1).coerceAtLeast(0) * 28f
-        (58f + minutes * 0.60f + extraRows + extra)
+        val proportional = (58f + minutes * 0.60f + extraRows + extra)
             .coerceIn(62f + extra, 220f + extra * 2f)
-            .dp
+        maxOf(proportional, recordedContentHeight(segment, fontScale)).dp
     }
 }
 
-/** 估算事件区实际占用的高度；字体放大时同步放大，避免时长文字被挤出块外。 */
-@Composable
-private fun recordedEventsHeight(segment: TimelineSegment): Dp {
-    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+/**
+ * 事件区 + 时长行实际需要的高度（dp）。
+ *
+ * 分类行约 24、每条备注按最多两行约 38、时长行约 19、块上下 padding 12；
+ * 文字行高随系统字号同比放大，块高也必须同步，时长才不会时有时无。
+ */
+private fun recordedContentHeight(segment: TimelineSegment, fontScale: Float): Float {
     val eventCount = segment.events.size
     val noteCount = segment.events.count { it.event.note != null }
     val gaps = (eventCount - 1).coerceAtLeast(0) * 2
-    return ((12 + eventCount * 24 + noteCount * 38 + gaps) * fontScale).dp
+    return 12f + (24f * eventCount + 38f * noteCount + gaps + 19f) * fontScale
 }

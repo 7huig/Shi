@@ -6,5 +6,4 @@ data class Category(
     val parentId: Long?,
     val sortOrder: Int,
     val colorHex: Long,
-    val isSystem: Boolean = false,
 )

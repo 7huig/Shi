@@ -229,8 +229,12 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
     fun undoDelete(event: TimelineEvent) {
         viewModelScope.launch {
             try {
-                repository.restoreEvent(event.event)
-                messages.send(HomeUiEvent.Restored(event))
+                if (repository.restoreEvent(event.event)) {
+                    messages.send(HomeUiEvent.Restored(event))
+                } else {
+                    // 分类在删除记录后也被删掉了，没有「未分类」可以兜底。
+                    messages.send(HomeUiEvent.Message("撤销失败：原分类已被删除"))
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {

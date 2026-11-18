@@ -56,7 +56,7 @@ private const val MAX_DRILL_LEVELS = 2
  * 弧段与分类行可联动选中；有子分类的行可通过行尾箭头下钻，顶部面包屑与返回按钮逐级回到根层；
  * 下钻只影响「分类用时」区块与环图层级，模式、翻页和自定义区间照常可用。
  *
- * 页面整体可滚动；[footer] 渲染在内容最后，用于承载底部数据迁移入口。
+ * 页面整体可滚动。数据备份入口统一收在顶栏「⋮ → 数据备份」，这里不再重复。
  */
 @Composable
 fun StatisticsScreen(
@@ -69,7 +69,6 @@ fun StatisticsScreen(
     onCategoryDrilled: (Long) -> Unit,
     onDrillUp: () -> Unit,
     onCrumbSelected: (Int) -> Unit,
-    footer: @Composable () -> Unit = {},
 ) {
     val summary = state.summary
     var showRangePicker by remember { mutableStateOf(false) }
@@ -161,8 +160,6 @@ fun StatisticsScreen(
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        footer()
     }
 
     if (showRangePicker) {
@@ -292,10 +289,13 @@ private fun RangeNav(
         ) {
             Text(
                 text = label,
+                // 让长日期先让位给右侧按钮：否则自定义区间的长文案会把「修改 / 今天」挤成竖排。
+                modifier = Modifier.weight(1f, fill = false),
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
             if (mode == StatsMode.CUSTOM) {
@@ -307,6 +307,8 @@ private fun RangeNav(
                         text = "修改",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
             }
@@ -319,9 +321,12 @@ private fun RangeNav(
                         text = "今天",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false,
                     )
                 }
-            }        }
+            }
+        }
         IconButton(onClick = onNext, enabled = canGoNext) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,

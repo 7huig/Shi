@@ -18,9 +18,6 @@ interface CategoryDao {
     @Query("SELECT * FROM category WHERE id = :id")
     suspend fun getById(id: Long): CategoryEntity?
 
-    @Query("SELECT * FROM category WHERE isSystem = 1 LIMIT 1")
-    suspend fun getSystemCategory(): CategoryEntity?
-
     @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM category WHERE parentId IS :parentId")
     suspend fun maxSortOrder(parentId: Long?): Int
 

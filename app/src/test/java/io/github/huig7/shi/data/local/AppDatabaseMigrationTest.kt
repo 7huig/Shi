@@ -73,6 +73,22 @@ class AppDatabaseMigrationTest {
         )
     """.trimIndent()
 
+    /** v5 的起点库：事件已有 uuid 与唯一索引。 */
+    private val eventTableV5 = """
+        CREATE TABLE IF NOT EXISTS `event` (
+            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            `note` TEXT,
+            `startAt` INTEGER NOT NULL,
+            `endAt` INTEGER NOT NULL,
+            `categoryId` INTEGER NOT NULL,
+            `createdAt` INTEGER NOT NULL,
+            `updatedAt` INTEGER NOT NULL,
+            `uuid` TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY(`categoryId`) REFERENCES `category`(`id`)
+                ON UPDATE NO ACTION ON DELETE RESTRICT
+        )
+    """.trimIndent()
+
     private fun createDatabase(name: String, version: Int, seed: (SupportSQLiteDatabase) -> Unit) {
         context.deleteDatabase(name)
         openDatabase(name, version).use(seed)
@@ -85,10 +101,20 @@ class AppDatabaseMigrationTest {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     db.execSQL(categoryTable)
                     db.execSQL("CREATE INDEX IF NOT EXISTS `index_category_parentId` ON `category` (`parentId`)")
-                    db.execSQL(if (version == 1) eventTableV1 else eventTableV2ToV4)
+                    val eventTable = when {
+                        version == 1 -> eventTableV1
+                        version >= 5 -> eventTableV5
+                        else -> eventTableV2ToV4
+                    }
+                    db.execSQL(eventTable)
                     if (version >= 2) {
                         db.execSQL("CREATE INDEX IF NOT EXISTS `index_event_categoryId` ON `event` (`categoryId`)")
                         db.execSQL("CREATE INDEX IF NOT EXISTS `index_event_startAt` ON `event` (`startAt`)")
+                    }
+                    if (version >= 5) {
+                        db.execSQL(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS `index_event_uuid` ON `event` (`uuid`)",
+                        )
                     }
                 }
 
@@ -104,10 +130,12 @@ class AppDatabaseMigrationTest {
         name: String,
         sortOrder: Int = 0,
         colorHex: Long = 0xFF5A7FA8,
+        isSystem: Boolean = false,
     ) {
         db.execSQL(
-            "INSERT INTO category (id, name, parentId, sortOrder, colorHex, isSystem) VALUES (?, ?, NULL, ?, ?, 1)",
-            arrayOf<Any?>(id, name, sortOrder, colorHex),
+            "INSERT INTO category (id, name, parentId, sortOrder, colorHex, isSystem) " +
+                "VALUES (?, ?, NULL, ?, ?, ?)",
+            arrayOf<Any?>(id, name, sortOrder, colorHex, if (isSystem) 1 else 0),
         )
     }
 
@@ -126,8 +154,8 @@ class AppDatabaseMigrationTest {
         }
 
     @Test
-    fun fullChain1To5_matchesSchemaAndConvertsEvents() {
-        val name = "migration-1-5"
+    fun fullChain1To6_matchesSchemaAndConvertsEvents() {
+        val name = "migration-1-6"
         createDatabase(name, 1) { db ->
             insertCategory(db, 1, "工作")
             listOf(
@@ -145,9 +173,10 @@ class AppDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            name, 5, true,
+            name, 6, true,
             AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3,
             AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5,
+            AppDatabase.MIGRATION_5_6,
         )
         db.use {
             assertEquals(listOf(1801000L, 1802000L, 1803000L), it.longColumn("SELECT endAt FROM event ORDER BY id"))
@@ -156,6 +185,37 @@ class AppDatabaseMigrationTest {
             assertEquals(3, uuids.size)
             assertTrue("uuid 应全部非空", uuids.all { uuid -> uuid.isNotBlank() })
             assertEquals("uuid 应互不相同", 3, uuids.toSet().size)
+        }
+    }
+
+    @Test
+    fun migrate5To6_removesEmptySystemCategoryAndKeepsUsedOne() {
+        val name = "migration-5-6"
+        createDatabase(name, 5) { db ->
+            insertCategory(db, 1, "工作")
+            // 空的系统「未分类」：迁移后应消失。
+            insertCategory(db, 5, "未分类", sortOrder = 4, isSystem = true)
+            // 仍被事件引用的系统「未分类」：保留为普通分类，避免丢记录。
+            insertCategory(db, 6, "未分类", sortOrder = 5, isSystem = true)
+            db.execSQL(
+                "INSERT INTO event (id, note, startAt, endAt, categoryId, createdAt, updatedAt, uuid) " +
+                    "VALUES (1, '写代码', 1000, 2000, 1, 1000, 1000, 'uuid-1')",
+            )
+            db.execSQL(
+                "INSERT INTO event (id, note, startAt, endAt, categoryId, createdAt, updatedAt, uuid) " +
+                    "VALUES (2, '旧记录', 3000, 4000, 6, 1000, 1000, 'uuid-2')",
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(name, 6, true, AppDatabase.MIGRATION_5_6)
+        db.use {
+            assertEquals(listOf("工作", "未分类"), it.stringColumn("SELECT name FROM category ORDER BY id"))
+            assertEquals(
+                listOf(0L, 0L),
+                it.longColumn("SELECT isSystem FROM category ORDER BY id"),
+            )
+            assertEquals(listOf(1L, 6L), it.longColumn("SELECT categoryId FROM event ORDER BY id"))
+            assertEquals(2L, it.longColumn("SELECT COUNT(*) FROM event").single())
         }
     }
 

@@ -15,7 +15,7 @@ import java.util.UUID
 
 @Database(
     entities = [CategoryEntity::class, EventEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,7 +25,13 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "time-log.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                )
                 .addCallback(SeedCallback())
                 .build()
 
@@ -143,20 +149,44 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 移除系统「未分类」分类。
+         *
+         * - 空的系统分类（没有事件、也没有子分类）直接删除；
+         * - 仍有事件或子分类的系统分类保留为普通分类，避免丢数据（用户可自行改名或删除）；
+         * - 最后把遗留的 isSystem 标记清零，业务代码不再依赖它。
+         *
+         * 该列在 v6 中保留但不再使用，因此无需重建 category 表。
+         */
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    DELETE FROM category
+                    WHERE isSystem = 1
+                      AND id NOT IN (SELECT categoryId FROM event)
+                      AND id NOT IN (
+                          SELECT parentId FROM category WHERE parentId IS NOT NULL
+                      )
+                    """.trimIndent(),
+                )
+                db.execSQL("UPDATE category SET isSystem = 0 WHERE isSystem = 1")
+            }
+        }
+
         private class SeedCallback : Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 DefaultCategories.all.forEach { category ->
                     db.execSQL(
                         "INSERT INTO category (id, name, parentId, sortOrder, colorHex, isSystem) " +
-                            "VALUES (?, ?, ?, ?, ?, ?)",
+                            "VALUES (?, ?, ?, ?, ?, 0)",
                         arrayOf<Any?>(
                             category.id,
                             category.name,
                             category.parentId,
                             category.sortOrder,
                             category.colorHex,
-                            if (category.isSystem) 1 else 0,
                         ),
                     )
                 }

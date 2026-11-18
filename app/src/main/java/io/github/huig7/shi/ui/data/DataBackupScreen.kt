@@ -24,8 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * 独立的数据备份页。原先入口藏在统计页最底部，和「分类」「搜索」不在一个层级；
- * 现在由顶栏溢出菜单进入，并把「只在本机」的说明放在最前面。
+ * 独立的数据备份页：由顶栏「⋮ → 数据备份」进入，
+ * 统计页不再重复放置底部入口。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

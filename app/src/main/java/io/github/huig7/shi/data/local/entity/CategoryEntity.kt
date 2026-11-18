@@ -23,5 +23,11 @@ data class CategoryEntity(
     val parentId: Long?,
     val sortOrder: Int,
     val colorHex: Long,
+    /**
+     * v5 及更早版本用来标记系统「未分类」的遗留列。
+     *
+     * 系统分类已移除，业务代码不再读取该字段；保留列是为了避免一次有风险的表重建迁移，
+     * 所有新分类都写入 false，v6 迁移也会把剩余行清零。
+     */
     val isSystem: Boolean = false,
 )

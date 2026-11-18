@@ -43,7 +43,7 @@ interface EventDao {
     @Query("DELETE FROM event WHERE categoryId IN (:categoryIds)")
     suspend fun deleteByCategoryIds(categoryIds: List<Long>): Int
 
-    /** 删除分类时保留记录：把子树内的事件改挂到父级 / 未分类。 */
+    /** 删除分类时保留记录：把子树内的事件改挂到用户指定的分类。 */
     @Query(
         "UPDATE event SET categoryId = :targetId, updatedAt = :updatedAt " +
             "WHERE categoryId IN (:categoryIds)",
@@ -65,10 +65,16 @@ interface EventDao {
     )
     suspend fun getOverlapping(startAt: Long, endAt: Long, excludeId: Long): List<EventEntity>
 
+    /**
+     * 搜索备注；[query] 为空时返回全部事件。
+     *
+     * 搜索页支持「只按分类筛选、不输入关键词」，空白关键词不能直接返回空列表，
+     * 因此把两种口径合并成一条查询。
+     */
     @Query(
         "SELECT * FROM event " +
-            "WHERE note IS NOT NULL AND instr(lower(note), lower(:query)) > 0 " +
+            "WHERE :query = '' OR (note IS NOT NULL AND instr(lower(note), lower(:query)) > 0) " +
             "ORDER BY startAt DESC, id DESC",
     )
-    fun searchByNote(query: String): Flow<List<EventEntity>>
+    fun search(query: String): Flow<List<EventEntity>>
 }

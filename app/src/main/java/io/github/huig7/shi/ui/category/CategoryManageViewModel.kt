@@ -9,6 +9,8 @@ import io.github.huig7.shi.data.repository.CategoryDeletionResult
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.model.CategoryNode
 import io.github.huig7.shi.domain.model.CategoryTree
+import io.github.huig7.shi.domain.model.MAX_CATEGORY_DEPTH
+import io.github.huig7.shi.domain.model.ReparentCheck
 import io.github.huig7.shi.domain.model.SolarTerms
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,8 +23,8 @@ import kotlinx.coroutines.launch
 
 data class CategoryEditor(
     val id: Long?,
+    /** 编辑中的目标父级；null 表示顶层。可在编辑弹窗里调整，实现跨层级移动。 */
     val parentId: Long?,
-    val parentName: String?,
     val name: String,
     val colorHex: Long,
 )
@@ -30,8 +32,9 @@ data class CategoryEditor(
 data class PendingCategoryDelete(
     val node: CategoryNode,
     val eventCount: Int,
-    /** 保留记录时改挂到谁：父分类名，根分类则是系统「未分类」。 */
-    val moveTargetName: String,
+    /** 保留记录时默认改挂的目标；根分类没有父级，为 null，交给用户选择。 */
+    val moveTargetId: Long?,
+    val moveTargetName: String?,
 )
 
 data class CategoryManageUiState(
@@ -78,9 +81,9 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
 
     fun startCreate(parent: CategoryNode?) {
         val tree = uiState.value.tree
-        // depthOf 是 1 基深度；MAX_DEPTH 是 0 基的最大层级索引，因此这里必须是 >。
-        if (parent != null && tree.depthOf(parent.category.id) > MAX_DEPTH) {
-            transient.update { it.copy(message = "分类最多支持 3 层") }
+        // depthOf 是 1 基深度；MAX_CATEGORY_DEPTH 是层数。父级达到最深一层时不能再加子级。
+        if (parent != null && tree.depthOf(parent.category.id) >= MAX_CATEGORY_DEPTH) {
+            transient.update { it.copy(message = "分类最多支持 $MAX_CATEGORY_DEPTH 层") }
             return
         }
         transient.update { local ->
@@ -90,7 +93,6 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
                 editor = CategoryEditor(
                     id = null,
                     parentId = parent?.category?.id,
-                    parentName = parent?.category?.name,
                     name = "",
                     colorHex = SolarTerms.random().colorHex,
                 ),
@@ -104,9 +106,6 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
                 editor = CategoryEditor(
                     id = node.category.id,
                     parentId = node.category.parentId,
-                    parentName = node.category.parentId?.let { id ->
-                        uiState.value.tree.find(id)?.category?.name
-                    },
                     name = node.category.name,
                     colorHex = node.category.colorHex,
                 ),
@@ -126,6 +125,20 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
         }
     }
 
+    /** 在编辑弹窗里选择新的父分类；null 表示升级为顶层分类。 */
+    fun onEditorParentChange(parentId: Long?) {
+        transient.update { current ->
+            // 展开新父级的整条父链，保存后能立刻在列表里看到移动结果，而不是「消失」了。
+            val newlyExpanded = parentId
+                ?.let { id -> uiState.value.tree.chainOf(id).map { it.category.id }.toSet() }
+                .orEmpty()
+            current.copy(
+                editor = current.editor?.copy(parentId = parentId),
+                expanded = current.expanded + newlyExpanded,
+            )
+        }
+    }
+
     fun dismissEditor() {
         transient.update { it.copy(editor = null) }
     }
@@ -138,10 +151,25 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
             try {
                 if (editor.id == null) {
                     repository.createCategory(name, editor.parentId, editor.colorHex)
+                    transient.update { it.copy(editor = null) }
                 } else {
-                    repository.updateCategory(editor.id, name, editor.colorHex)
+                    when (
+                        repository.updateCategory(
+                            id = editor.id,
+                            name = name,
+                            colorHex = editor.colorHex,
+                            parentId = editor.parentId,
+                        )
+                    ) {
+                        ReparentCheck.Ok -> transient.update { it.copy(editor = null) }
+                        ReparentCheck.NotFound ->
+                            transient.update { it.copy(message = "分类已不存在，请重试") }
+                        ReparentCheck.SelfOrDescendant ->
+                            transient.update { it.copy(message = "不能移到自己的子分类下面") }
+                        ReparentCheck.DepthExceeded ->
+                            transient.update { it.copy(message = "最多支持 $MAX_CATEGORY_DEPTH 层，无法移到该分类下") }
+                    }
                 }
-                transient.update { it.copy(editor = null) }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -165,26 +193,25 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
     }
 
     fun requestDelete(node: CategoryNode) {
-        if (node.category.isSystem) {
-            transient.update { it.copy(message = "「未分类」用于兜底，不能删除") }
+        val currentTree = uiState.value.tree
+        val subtreeSize = currentTree.subtreeIds(node.category.id).size
+        if (subtreeSize > 0 && subtreeSize == currentTree.flatten().size) {
+            // 只剩这一个分类：提前拦住，避免用户确认后才发现删不掉。
+            transient.update { it.copy(message = "至少保留一个分类，才能继续记录") }
             return
         }
         viewModelScope.launch {
             try {
                 val count = repository.countEventsInSubtree(node.category.id)
                 val tree = uiState.value.tree
-                val targetName = node.category.parentId
-                    ?.let { tree.find(it)?.category?.name }
-                    ?: tree.flatten()
-                        .firstOrNull { (candidate, _) -> candidate.category.isSystem }
-                        ?.first?.category?.name
-                    ?: "未分类"
+                val parentId = node.category.parentId?.takeIf { tree.find(it) != null }
                 transient.update {
                     it.copy(
                         pendingDelete = PendingCategoryDelete(
                             node = node,
                             eventCount = count,
-                            moveTargetName = targetName,
+                            moveTargetId = parentId,
+                            moveTargetName = parentId?.let { id -> tree.find(id)?.category?.name },
                         ),
                     )
                 }
@@ -201,22 +228,22 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
     }
 
     fun confirmDelete() {
-        deleteCategory(moveEventsToParent = false)
+        deleteCategory(moveEventsToId = null)
     }
 
-    /** 删除分类但保留记录：事件改挂到父分类 / 未分类。 */
-    fun confirmDeleteMovingEvents() {
-        deleteCategory(moveEventsToParent = true)
+    /** 删除分类但保留记录：改挂到父分类，根分类则由用户在弹窗里选择目标。 */
+    fun confirmDeleteMovingEvents(targetId: Long) {
+        deleteCategory(moveEventsToId = targetId)
     }
 
-    private fun deleteCategory(moveEventsToParent: Boolean) {
+    private fun deleteCategory(moveEventsToId: Long?) {
         val pending = transient.value.pendingDelete ?: return
         viewModelScope.launch {
             try {
                 val message = when (
                     val outcome = repository.deleteCategory(
                         pending.node.category.id,
-                        moveEventsToParent = moveEventsToParent,
+                        moveEventsToId = moveEventsToId,
                     )
                 ) {
                     is CategoryDeletionResult.Deleted -> buildString {
@@ -226,12 +253,13 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
                         }
                         if (outcome.movedEventCount > 0) {
                             append("，").append(outcome.movedEventCount).append(" 条记录移到「")
-                            append(outcome.movedToName ?: "未分类").append("」")
+                            append(outcome.movedToName ?: "所选分类").append("」")
                         }
                     }
 
                     CategoryDeletionResult.NotFound -> "分类已不存在"
-                    CategoryDeletionResult.SystemCategory -> "系统分类不能删除"
+                    CategoryDeletionResult.LastCategory -> "至少保留一个分类，才能继续记录"
+                    CategoryDeletionResult.InvalidMoveTarget -> "目标分类无效，请重新选择"
                 }
                 transient.update { it.copy(pendingDelete = null, message = message) }
             } catch (error: CancellationException) {
@@ -270,8 +298,6 @@ class CategoryManageViewModel(private val repository: TimeLogRepository) : ViewM
     }
 
     companion object {
-        private const val MAX_DEPTH = 2
-
         /** 所有有子分类的节点 id；「全部展开」与「是否已全部展开」都用它。 */
         private fun branchIds(tree: CategoryTree): Set<Long> =
             tree.flatten()

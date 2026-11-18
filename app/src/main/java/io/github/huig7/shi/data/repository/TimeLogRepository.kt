@@ -12,8 +12,10 @@ import io.github.huig7.shi.domain.model.ExportedCategory
 import io.github.huig7.shi.domain.model.ExportedEvent
 import io.github.huig7.shi.domain.model.ImportMode
 import io.github.huig7.shi.domain.model.LedgerSnapshot
+import io.github.huig7.shi.domain.model.ReparentCheck
 import io.github.huig7.shi.domain.model.TimelineEvent
 import io.github.huig7.shi.domain.model.buildCategoryTree
+import io.github.huig7.shi.domain.model.checkReparent
 import io.github.huig7.shi.domain.model.legacyIdentity
 import io.github.huig7.shi.domain.model.legacyUuid
 import io.github.huig7.shi.domain.resolveOverlap
@@ -46,15 +48,26 @@ class TimeLogRepository(private val database: AppDatabase) {
     /** 最近一条记录的分类；没有记录时为 null。 */
     suspend fun latestCategoryId(): Long? = eventDao.latestCategoryId()
 
-    /** 按备注搜索；空白关键字直接返回空列表，不查库。 */
-    fun searchEvents(query: String): Flow<List<TimelineEvent>> {
+    /**
+     * 按备注搜索，并可选按分类筛选（含该分类的整棵子树）。
+     *
+     * 关键词与分类都为空时直接返回空列表，不查库；只选分类、不输关键词时列出该分类下的全部记录。
+     */
+    fun searchEvents(query: String, categoryId: Long? = null): Flow<List<TimelineEvent>> {
         val keyword = query.trim()
-        if (keyword.isEmpty()) return flowOf(emptyList())
+        if (keyword.isEmpty() && categoryId == null) return flowOf(emptyList())
         return combine(
-            eventDao.searchByNote(keyword),
+            eventDao.search(keyword),
             categoryDao.observeAll(),
         ) { entities, categories ->
-            entities.toTimeline(buildCategoryTree(categories.map { it.toDomain() }))
+            val tree = buildCategoryTree(categories.map { it.toDomain() })
+            val categoryIds = categoryId?.let { tree.subtreeIds(it).toSet() }
+            val filtered = if (categoryIds == null) {
+                entities
+            } else {
+                entities.filter { it.categoryId in categoryIds }
+            }
+            filtered.toTimeline(tree)
         }
     }
 
@@ -147,21 +160,12 @@ class TimeLogRepository(private val database: AppDatabase) {
     /**
      * 撤销删除：按新 id 重新插入同一条记录。
      *
-     * 分类若在删除后也被删掉，则回落到系统「未分类」，避免撤销按钮因外键失败而失效；
      * 不重新走重叠裁剪，撤销只应该把用户刚删的那一条原样放回去。
+     * 分类若在删除记录之后也被删掉，已经没有「未分类」可以兜底，返回 false 由界面提示撤销失败。
      */
-    suspend fun restoreEvent(event: Event): Long = database.withTransaction {
+    suspend fun restoreEvent(event: Event): Boolean = database.withTransaction {
         val categoryId = event.categoryId.takeIf { categoryDao.getById(it) != null }
-            ?: categoryDao.getSystemCategory()?.id
-            ?: categoryDao.insert(
-                CategoryEntity(
-                    name = "未分类",
-                    parentId = null,
-                    sortOrder = categoryDao.maxSortOrder(null) + 1,
-                    colorHex = 0xFF8C928C,
-                    isSystem = true,
-                ),
-            )
+            ?: return@withTransaction false
         val now = System.currentTimeMillis()
         eventDao.insert(
             EventEntity(
@@ -174,6 +178,7 @@ class TimeLogRepository(private val database: AppDatabase) {
                 uuid = UUID.randomUUID().toString(),
             ),
         )
+        true
     }
 
     suspend fun createCategory(name: String, parentId: Long?, colorHex: Long): Long {
@@ -188,9 +193,39 @@ class TimeLogRepository(private val database: AppDatabase) {
         )
     }
 
-    suspend fun updateCategory(id: Long, name: String, colorHex: Long) {
-        val existing = categoryDao.getById(id) ?: return
-        categoryDao.update(existing.copy(name = name.trim(), colorHex = colorHex))
+    /**
+     * 保存分类编辑：名称、颜色，以及可选的父级调整。
+     *
+     * 父级变化时复用 [CategoryTree.checkReparent] 的规则（防环、最多 3 层），
+     * 通过后挂到新父级末尾；返回 [ReparentCheck.Ok] 表示保存成功。
+     */
+    suspend fun updateCategory(
+        id: Long,
+        name: String,
+        colorHex: Long,
+        parentId: Long?,
+    ): ReparentCheck = database.withTransaction {
+        val tree = buildCategoryTree(categoryDao.getAll().map { it.toDomain() })
+        val node = tree.find(id) ?: return@withTransaction ReparentCheck.NotFound
+        if (parentId != node.category.parentId) {
+            when (val check = tree.checkReparent(id, parentId)) {
+                ReparentCheck.Ok -> Unit
+                else -> return@withTransaction check
+            }
+        }
+        val existing = categoryDao.getById(id) ?: return@withTransaction ReparentCheck.NotFound
+        val updated = if (parentId == existing.parentId) {
+            existing.copy(name = name.trim(), colorHex = colorHex)
+        } else {
+            existing.copy(
+                name = name.trim(),
+                colorHex = colorHex,
+                parentId = parentId,
+                sortOrder = categoryDao.maxSortOrder(parentId) + 1,
+            )
+        }
+        categoryDao.update(updated)
+        ReparentCheck.Ok
     }
 
     /**
@@ -222,43 +257,44 @@ class TimeLogRepository(private val database: AppDatabase) {
     }
 
     /**
-     * 删除分类。[moveEventsToParent] 为 true 时保留子树内的事件，
-     * 改挂到该分类的父级；根分类没有父级时改挂到系统「未分类」。
+     * 删除分类及其子分类。
      *
+     * [moveEventsToId] 为 null 时一并删除子树内的事件；非 null 时保留事件并改挂到该分类
+     * （根分类删除时由界面让用户选择目标分类）。目标不能落在被删除的子树里。
+     *
+     * 至少保留一个分类：否则删除后没有分类可记录，且已经没有系统兜底分类。
      * 事件外键是 RESTRICT，必须先处理事件，才能删除分类；子分类由自引用外键 CASCADE 清理。
      */
     suspend fun deleteCategory(
         categoryId: Long,
-        moveEventsToParent: Boolean = false,
+        moveEventsToId: Long? = null,
     ): CategoryDeletionResult = database.withTransaction {
         val all = categoryDao.getAll().map { it.toDomain() }
         val tree = buildCategoryTree(all)
-        val node = tree.find(categoryId) ?: return@withTransaction CategoryDeletionResult.NotFound
-        if (node.category.isSystem) return@withTransaction CategoryDeletionResult.SystemCategory
+        tree.find(categoryId) ?: return@withTransaction CategoryDeletionResult.NotFound
 
         val ids = tree.subtreeIds(categoryId)
+        if (ids.size == all.size) return@withTransaction CategoryDeletionResult.LastCategory
+
         var movedEventCount = 0
         var movedToName: String? = null
         var deletedEventCount = 0
         if (ids.isNotEmpty()) {
-            if (moveEventsToParent) {
-                val parentId = node.category.parentId?.takeIf { categoryDao.getById(it) != null }
-                val targetId = parentId
-                    ?: categoryDao.getSystemCategory()?.id
-                    ?: categoryDao.insert(
-                        CategoryEntity(
-                            name = "未分类",
-                            parentId = null,
-                            sortOrder = categoryDao.maxSortOrder(null) + 1,
-                            colorHex = 0xFF8C928C,
-                            isSystem = true,
-                        ),
-                    )
-                movedEventCount = eventDao.reassignByCategoryIds(ids, targetId, System.currentTimeMillis())
-                movedToName = tree.find(targetId)?.category?.name
-                    ?: categoryDao.getById(targetId)?.name
-            } else {
+            if (moveEventsToId == null) {
                 deletedEventCount = eventDao.deleteByCategoryIds(ids)
+            } else {
+                val targetExists = moveEventsToId !in ids &&
+                    categoryDao.getById(moveEventsToId) != null
+                if (!targetExists) {
+                    return@withTransaction CategoryDeletionResult.InvalidMoveTarget
+                }
+                movedEventCount = eventDao.reassignByCategoryIds(
+                    ids,
+                    moveEventsToId,
+                    System.currentTimeMillis(),
+                )
+                movedToName = tree.find(moveEventsToId)?.category?.name
+                    ?: categoryDao.getById(moveEventsToId)?.name
             }
         }
         categoryDao.deleteById(categoryId)
@@ -293,8 +329,11 @@ class TimeLogRepository(private val database: AppDatabase) {
         eventDao.deleteAll()
         categoryDao.deleteAll()
 
+        // 旧备份可能带着空的系统「未分类」，不再恢复它；被事件引用的系统分类则保留为普通分类。
+        val usedCategoryIds = snapshot.events.mapTo(HashSet()) { it.categoryId }
         val idMap = mutableMapOf<Long, Long>()
         orderByDepth(snapshot.categories).forEach { category ->
+            if (category.isSystem && category.id !in usedCategoryIds) return@forEach
             val parentNewId = category.parentId?.let(idMap::get)
             val entity = CategoryEntity(
                 id = category.id.coerceAtLeast(0L),
@@ -302,7 +341,7 @@ class TimeLogRepository(private val database: AppDatabase) {
                 parentId = parentNewId,
                 sortOrder = category.sortOrder,
                 colorHex = category.colorHex,
-                isSystem = category.isSystem,
+                isSystem = false,
             )
             val newId = categoryDao.insert(entity)
             idMap[category.id] = newId
@@ -312,19 +351,14 @@ class TimeLogRepository(private val database: AppDatabase) {
 
     private suspend fun restoreMerge(snapshot: LedgerSnapshot) {
         val existing = categoryDao.getAll().toMutableList()
-        val system = existing.firstOrNull { it.isSystem }
+        val usedCategoryIds = snapshot.events.mapTo(HashSet()) { it.categoryId }
         val idMap = mutableMapOf<Long, Long>()
 
         orderByDepth(snapshot.categories).forEach { category ->
+            if (category.isSystem && category.id !in usedCategoryIds) return@forEach
             val parentNewId = category.parentId?.let(idMap::get)
-            if (category.isSystem && system != null) {
-                idMap[category.id] = system.id
-                return@forEach
-            }
             val reused = existing.firstOrNull {
-                it.name == category.name.trim() &&
-                    it.parentId == parentNewId &&
-                    it.isSystem == category.isSystem
+                it.name == category.name.trim() && it.parentId == parentNewId
             }
             if (reused != null) {
                 idMap[category.id] = reused.id
@@ -335,7 +369,7 @@ class TimeLogRepository(private val database: AppDatabase) {
                         parentId = parentNewId,
                         sortOrder = category.sortOrder,
                         colorHex = category.colorHex,
-                        isSystem = category.isSystem,
+                        isSystem = false,
                     ),
                 )
                 idMap[category.id] = newId
@@ -346,7 +380,7 @@ class TimeLogRepository(private val database: AppDatabase) {
                         parentId = parentNewId,
                         sortOrder = category.sortOrder,
                         colorHex = category.colorHex,
-                        isSystem = category.isSystem,
+                        isSystem = false,
                     ),
                 )
             }
@@ -359,18 +393,11 @@ class TimeLogRepository(private val database: AppDatabase) {
         idMap: Map<Long, Long>,
         skipExisting: Boolean,
     ) {
-        val fallback = categoryDao.getSystemCategory()?.id
-            ?: categoryDao.insert(
-                CategoryEntity(
-                    name = "未分类",
-                    parentId = null,
-                    sortOrder = categoryDao.maxSortOrder(null) + 1,
-                    colorHex = 0xFF8C928C,
-                    isSystem = true,
-                ),
-            )
         val legacyOccurrences = mutableMapOf<String, Int>()
         events.forEach { event ->
+            // 正常导出的备份一定包含事件引用的分类；缺失说明文件不完整，宁可整次导入回滚也不静默改分类。
+            val categoryId = idMap[event.categoryId]
+                ?: throw IllegalArgumentException("备份文件缺少事件对应的分类")
             val uuid = event.uuid?.takeIf { it.isNotBlank() } ?: run {
                 val identity = event.legacyIdentity()
                 val occurrence = legacyOccurrences[identity] ?: 0
@@ -385,7 +412,7 @@ class TimeLogRepository(private val database: AppDatabase) {
                     note = event.note.cleanNote(),
                     startAt = startAt,
                     endAt = endAt,
-                    categoryId = idMap[event.categoryId] ?: fallback,
+                    categoryId = categoryId,
                     createdAt = event.createdAt,
                     updatedAt = event.updatedAt,
                     uuid = uuid,
@@ -434,7 +461,6 @@ class TimeLogRepository(private val database: AppDatabase) {
         parentId = parentId,
         sortOrder = sortOrder,
         colorHex = colorHex,
-        isSystem = isSystem,
     )
 
     private fun EventEntity.toDomain(): Event = Event(
@@ -454,7 +480,8 @@ class TimeLogRepository(private val database: AppDatabase) {
         parentId = parentId,
         sortOrder = sortOrder,
         colorHex = colorHex,
-        isSystem = isSystem,
+        // isSystem 只为兼容旧备份格式保留；新导出的分类都是普通分类。
+        isSystem = false,
     )
 
     private fun EventEntity.toExport(): ExportedEvent = ExportedEvent(
@@ -468,20 +495,4 @@ class TimeLogRepository(private val database: AppDatabase) {
     )
 }
 
-sealed interface SaveEventResult {
-    data class Saved(val id: Long) : SaveEventResult
-    data object EventNotFound : SaveEventResult
-    data object OverlapChanged : SaveEventResult
-}
 
-sealed interface CategoryDeletionResult {
-    data class Deleted(
-        val categoryCount: Int,
-        val deletedEventCount: Int,
-        val movedEventCount: Int = 0,
-        val movedToName: String? = null,
-    ) : CategoryDeletionResult
-
-    data object NotFound : CategoryDeletionResult
-    data object SystemCategory : CategoryDeletionResult
-}

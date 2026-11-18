@@ -7,6 +7,7 @@
 以下均在 API 31 Pixel 6 模拟器（1080×2400）上使用 debug 包实际点按验证；release 包另做 R8 构建与签名校验。
 
 - [x] 应用名叫「時」，桌面图标与顶栏一致；顶栏两个页签「時記」「時計」同款 23sp 衬线，选中为墨色并带 2dp 指示条，未选为次要色。
+- [x] 版本号为 0.3.0（versionCode 12）；顶栏「⋮ → 关于時」显示「時（Shi）· v0.3.0」。
 - [x] 时间轴页没有整条「完成」按钮，右下角是 62dp 松绿圆圈 + 主题前景色加号；点击打开「记录一段」，长按打开「快速记录」。
 - [x] 主界面时间 13sp、分类路径 16sp；日期标题为「今天 · M月d日 / 昨天 · M月d日 / M月d日」并配「周X」副标题，与统计页日期语法一致。
 - [x] 左侧时分标签的中心正落在相邻两个事件之间（首段保持顶部对齐）。
@@ -19,24 +20,29 @@
 - [x] 月视图、年视图、自定义视图均显示对应数据；自定义区间一次弹出起止日期范围选择器。
 - [x] 分类用时行：分类名右侧「N次」与占比，时长左侧环比——增加红色、减少绿色并带 ▲▼，持平「0%」灰色，上一周期无记录显示中性色「新增」。
 - [x] 统计页顶部显示「已记录 N%」与「覆盖时长 / 已过时长」，重叠记录按并集只算一次。
-- [x] 单条记录长按删除后，底部 Snackbar 可在提示条消失前撤销；删除分类时可选择保留事件并移到父级 / 未分类。
+- [x] 单条记录长按删除后，底部 Snackbar 可在提示条消失前撤销；删除分类时可选择保留事件并移到父级（顶层分类则让用户选择目标分类）；至少保留一个分类。
 - [x] 导出文件名为 `時-yyyy-MM-dd.json`（schema 2，兼容导入 schema 1）。
 - [x] 深色模式下环图、环比红绿、色板、FAB 均正确。
-- [x] 分类页提示语为「点箭头展开或收起；按住右侧手柄上下拖动，可调整同级顺序。最多 3 层；删除分类时可以选择一并删除事件，或保留事件并移到父级。」
+- [x] 分类页不再显示顶部总说明，直接进入分类列表。
 - [x] 分类页默认全部收起，只显示根分类与「· N」子级数量；点行内箭头展开 / 收起（200ms 旋转动画），顶栏「全部展开 / 全部收起」一键切换；在收起的父分类上点「+」新建子分类时会自动展开父分类。
+- [x] 编辑分类 → 父分类：候选列表排除自己与后代，并隐藏会让子树超过 3 层的目标；把子分类改为「顶层」即可升为父分类，把父分类挂到其他分类下会连同整棵子树移动。保存后新父级自动展开，列表立即看到移动结果。
 - [x] 按住某行右侧三横线手柄上下拖动，被拖行浮起跟手、其余行平滑让位，指针越过相邻行中心 6dp 才换位（临界点不抖动）；松手后顺序写入数据库，杀掉进程重进仍然保留。
 - [x] 「時計」中点分类行主体只选中，点行尾箭头进入下一级统计；面包屑「全部分类 / …」可逐级返回。
 - [x] 搜索结果顶部显示「找到 N 条记录」与「共 X 小时」的总时长；备注中的命中词高亮。
-- [x] 旧版本数据库升级到 v5：原记录完整，自动补全事件 UUID；覆盖安装后启动与数据展示正常。
+- [x] 搜索页搜索框下方有分类筛选：默认「全部分类」，点开是缩进的分类树；选择任意层级后结果只保留该分类及其子树，可一键清除；只选分类、不输关键词时列出该分类下全部记录。
+- [x] 旧版本数据库升级到 v6：原记录完整，自动补全事件 UUID；空的系统「未分类」被删除，仍被事件引用的「未分类」保留为普通分类；覆盖安装后启动与数据展示正常。
+- [x] 统计页底部不再有数据备份入口，备份统一从顶栏「⋮ → 数据备份」进入。
+- [x] 「日 / 周 / 月 / 年」与自定义区间共用同一套范围导航；自定义区间下「修改 / 今天」保持横排，选择时间段的日期标题固定单行、水平居中、不换行。
+- [x] 有备注的记录块始终显示「N 小时 X 分」时长；把系统字体调大后，块高随文字增长，时长不会被备注挤掉。
 - [x] `am force-stop` 后重启，数据完整保留。
-- [x] `./gradlew testDebugUnitTest assembleDebug --console=plain` 全绿（Migration 4 + CategoryDeletion 2 + TransferJson 21 + CategoryCascade 8 + CategoryVisibility 7 + LegacyEventUuid 3 + OverlapResolver 12 + Statistics 39 + TimelineBuilder 8 + DragMath 15 = 119 例）。
+- [x] `./gradlew testDebugUnitTest assembleDebug --console=plain` 全绿（Migration 5 + CategoryDeletion 6 + CategoryReparent 9 + SearchEvents 3 + TransferJson 21 + CategoryCascade 8 + CategoryVisibility 7 + LegacyEventUuid 3 + OverlapResolver 12 + Statistics 39 + TimelineBuilder 8 + DragMath 15 = 136 例）。
 - [x] `./gradlew assembleRelease` 产物已签名（R8 压缩 + 资源收缩），签名证书与 SHA-256 已核对。
 
 ## 常见问题
 
 ### 数据存在哪？卸载会丢吗？
 
-全部数据在应用私有的 Room / SQLite 数据库 `time-log.db`（Android 的 `/data/data/io.github.huig7.shi/databases/`）里。没有云端、没有账号，**卸载应用或清除数据会一并删除**；换机、刷机前请从顶栏「⋮ → 数据备份」或统计页底部导出 JSON。
+全部数据在应用私有的 Room / SQLite 数据库 `time-log.db`（Android 的 `/data/data/io.github.huig7.shi/databases/`）里。没有云端、没有账号，**卸载应用或清除数据会一并删除**；换机、刷机前请从顶栏「⋮ → 数据备份」导出 JSON。
 
 ### 真的不联网吗？
 
@@ -69,13 +75,13 @@ keyPassword=你的密码
 
 ### 怎么跑测试？有 UI 测试吗？
 
-目前只有 JVM 单元测试，覆盖时间分块、重叠求解、统计与覆盖率、旧备份 UUID、三级分类级联、分类删除迁移、分类展开可见性与拖拽落点数学等纯逻辑：
+目前只有 JVM 单元测试，覆盖时间分块、重叠求解、统计与覆盖率、旧备份 UUID、三级分类级联、分类跨层级移动、搜索筛选、分类删除与数据库迁移、展开可见性与拖拽落点数学等纯逻辑：
 
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
-共 119 例（Migration 4 + CategoryDeletion 2 + TransferJson 21 + CategoryCascade 8 + CategoryVisibility 7 + LegacyEventUuid 3 + OverlapResolver 12 + Statistics 39 + TimelineBuilder 8 + DragMath 15）。没有 instrumentation / Compose UI 测试，交互验收依赖上面的手动清单。
+共 136 例（Migration 5 + CategoryDeletion 6 + CategoryReparent 9 + SearchEvents 3 + TransferJson 21 + CategoryCascade 8 + CategoryVisibility 7 + LegacyEventUuid 3 + OverlapResolver 12 + Statistics 39 + TimelineBuilder 8 + DragMath 15）。没有 instrumentation / Compose UI 测试，交互验收依赖上面的手动清单。
 
 ### 图标是用什么做的？字体许可？
 

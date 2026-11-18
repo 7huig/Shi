@@ -52,7 +52,7 @@ private const val RING_MIN_ANGLE = 1f
 private val RING_INNER_RATIOS = floatArrayOf(0.46f, 0.68f, 0.84f)
 private val RING_OUTER_RATIOS = floatArrayOf(0.68f, 0.84f, 1.0f)
 
-/** 弧段在分类树中的索引路径；不能只用分类 ID，因为多个未分类根可能共用占位 ID。 */
+/** 弧段在分类树中的索引路径；不能只用分类 ID，因为多个未知分类根可能共用占位 ID。 */
 internal data class RingSegment(
     val path: List<Int>,
     val usage: CategoryUsage,

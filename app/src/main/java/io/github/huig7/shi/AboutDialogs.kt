@@ -104,4 +104,4 @@ private fun OnboardingLine(number: String, text: String) {
 internal fun appVersion(context: Context): String = runCatching {
     @Suppress("DEPRECATION")
     context.packageManager.getPackageInfo(context.packageName, 0).versionName
-}.getOrNull() ?: "0.2.3"
+}.getOrNull() ?: "0.3.0"

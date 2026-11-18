@@ -170,7 +170,8 @@ object StatsBuilder {
 
     private const val FALLBACK_COLOR = 0xFF9AA29A
     private const val PATH_SEPARATOR = " / "
-    private const val UNKNOWN_NAME = "未分类"
+    /** 分类树里找不到的事件（异常数据）用的展示名；不再与系统分类重名。 */
+    private const val UNKNOWN_NAME = "未知分类"
 
     /**
      * 把事件列表聚合成 [StatsSummary]。

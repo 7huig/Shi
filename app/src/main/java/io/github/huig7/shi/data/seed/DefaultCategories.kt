@@ -1,11 +1,13 @@
 package io.github.huig7.shi.data.seed
 
 /**
- * 首次建库时写入的默认分类。固定主键是为了在同一个事务里安全地写入父子关系，
- * 同时给「未分类」一个稳定 ID（删除分类时会连同事件一起删除，系统分类仅作兜底展示）。
+ * 首次建库时写入的默认分类。固定主键是为了在同一个事务里安全地写入父子关系。
  *
  * 默认顺序：工作（沟通、执行）→ 休息（睡眠、放空）→ 学习（输入、输出）→ 娱乐（沉浸、社交）。
  * 颜色取自 24 节气色板（[io.github.huig7.shi.domain.model.SolarTerms]），不显示节气名称。
+ *
+ * 不再预置系统「未分类」：时间轴上的「未记录」空档已经承担兜底语义，
+ * 真实记录必须挂在一个用户可见、可编辑的分类上。
  */
 data class SeedCategory(
     val id: Long,
@@ -13,7 +15,6 @@ data class SeedCategory(
     val parentId: Long?,
     val sortOrder: Int,
     val colorHex: Long,
-    val isSystem: Boolean = false,
 )
 
 object DefaultCategories {
@@ -30,6 +31,5 @@ object DefaultCategories {
         SeedCategory(4, "娱乐", null, 3, 0xFF94594A),
         SeedCategory(41, "社交", 4, 1, 0xFFC46E4A),
         SeedCategory(42, "沉浸", 4, 0, 0xFFA8463A),
-        SeedCategory(5, "未分类", null, 4, 0xFF8C928C, isSystem = true),
     )
 }

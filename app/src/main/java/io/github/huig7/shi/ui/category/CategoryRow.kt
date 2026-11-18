@@ -138,14 +138,6 @@ internal fun CategoryRow(
                     )
                 }
             }
-            if (node.category.isSystem) {
-                Text(
-                    text = "系统",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-            }
             if (depth < 2) {
                 IconButton(onClick = { onAddChild(node) }) {
                     Icon(
@@ -156,15 +148,13 @@ internal fun CategoryRow(
                     )
                 }
             }
-            if (!node.category.isSystem) {
-                IconButton(onClick = { onDelete(node) }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = "删除分类",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            IconButton(onClick = { onDelete(node) }) {
+                Icon(
+                    imageVector = Icons.Rounded.Delete,
+                    contentDescription = "删除分类",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             DragHandle(
                 modifier = Modifier
@@ -275,14 +265,6 @@ internal fun DragOverlayRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (node.category.isSystem) {
-                Text(
-                    text = "系统",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-            }
             Box(
                 modifier = Modifier.size(width = 44.dp, height = 56.dp),
                 contentAlignment = Alignment.Center,
