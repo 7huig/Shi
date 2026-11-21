@@ -7,6 +7,8 @@ data class LedgerSnapshot(
     val exportedAt: Long,
     val categories: List<ExportedCategory>,
     val events: List<ExportedEvent>,
+    /** schema 3 起写入；旧备份没有计划，导入后保持未配置。 */
+    val plans: List<ExportedCategoryPlan> = emptyList(),
 )
 
 data class ExportedCategory(
@@ -33,6 +35,24 @@ data class ExportedEvent(
     val updatedAt: Long,
     /** schema 2 起写入；读取 schema 1 时为 null，导入后生成新 UUID。 */
     val uuid: String? = null,
+)
+
+/**
+ * 分类计划的导出形态。
+ *
+ * 保存用户填写的参数与下一次提醒时间，而不只导出开关；这样恢复到另一台设备后，
+ * 间隔待办不会从头开始，完成历史也能保留。
+ */
+data class ExportedCategoryPlan(
+    val categoryId: Long,
+    val heatmapEnabled: Boolean,
+    val dailyGoalMinutes: Int,
+    val fixedTimeMinuteOfDay: Int,
+    val fixedTimeLabel: String?,
+    val intervalMinutes: Int,
+    val intervalLabel: String?,
+    val nextReminderAt: Long,
+    val lastCompletedAt: Long,
 )
 
 enum class ImportMode { MERGE, REPLACE }

@@ -65,7 +65,7 @@ internal fun OnboardingDialog(onDone: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OnboardingLine("1", "点右下角 + 记一笔；长按 + 是快速记录。")
-                OnboardingLine("2", "点虚线空档，补记没记录的时间。")
+                OnboardingLine("2", "点虚线占位，可以记录那段时间；不记也没关系。")
                 OnboardingLine("3", "左右滑动，或点「時計」查看统计。")
             }
         },

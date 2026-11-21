@@ -188,10 +188,10 @@ object StatsBuilder {
         zone: ZoneId,
         rootId: Long? = null,
     ): StatsSummary {
-        val current = aggregate(clip(events, window.startAt, minOf(window.endAt, now)), tree)
+        val current = aggregate(clipTo(events, window.startAt, minOf(window.endAt, now)), tree)
         val previousWindow = previousWindowOf(window, now, zone)
         val previous = aggregate(
-            clip(events, previousWindow.startAt, minOf(previousWindow.endAt, now)),
+            clipTo(events, previousWindow.startAt, minOf(previousWindow.endAt, now)),
             tree,
         )
         val elapsedMillis = (minOf(window.endAt, now) - window.startAt).coerceAtLeast(0L)
@@ -234,21 +234,12 @@ object StatsBuilder {
     }
 
     /** 与 [window] 等长、同模式的上一个窗口；当前窗口包含 [now] 时对齐到已过时长。 */
-    private fun previousWindowOf(window: StatsWindow, now: Long, zone: ZoneId): StatsWindow {
+    internal fun previousWindowOf(window: StatsWindow, now: Long, zone: ZoneId): StatsWindow {
         val previous = StatsWindows.shift(window, -1, zone)
         if (now < window.startAt || now >= window.endAt) return previous
         val elapsed = now - window.startAt
         val alignedEnd = previous.startAt + elapsed
         return if (alignedEnd < previous.endAt) previous.copy(endAt = alignedEnd) else previous
-    }
-
-    private fun clip(events: List<TimelineEvent>, from: Long, until: Long): List<ClippedEvent> {
-        if (until <= from) return emptyList()
-        return events.mapNotNull { event ->
-            val start = maxOf(event.event.startAt, from)
-            val end = minOf(event.event.startAt + event.event.durationMillis, until)
-            if (end <= start) null else ClippedEvent(event, start, end)
-        }
     }
 
     private fun aggregate(clipped: List<ClippedEvent>, tree: CategoryTree): Aggregate {
@@ -364,8 +355,6 @@ object StatsBuilder {
         return head.ifBlank { UNKNOWN_NAME }
     }
 }
-
-private data class ClippedEvent(val event: TimelineEvent, val start: Long, val end: Long)
 
 private class Aggregate(
     val directMillis: Map<Long, Long>,

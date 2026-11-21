@@ -19,17 +19,17 @@ data class SeedCategory(
 
 object DefaultCategories {
     val all: List<SeedCategory> = listOf(
-        SeedCategory(1, "工作", null, 0, 0xFF5A7FA8),
-        SeedCategory(11, "执行", 1, 1, 0xFF3F5B78),
-        SeedCategory(12, "沟通", 1, 0, 0xFF8A9AB8),
-        SeedCategory(2, "休息", null, 1, 0xFF9E86B8),
-        SeedCategory(21, "睡眠", 2, 0, 0xFF8B72A6),
-        SeedCategory(22, "放空", 2, 1, 0xFF8A86A8),
-        SeedCategory(3, "学习", null, 2, 0xFFC9A24E),
-        SeedCategory(31, "输入", 3, 0, 0xFFB8933F),
-        SeedCategory(32, "输出", 3, 1, 0xFFA98A5A),
-        SeedCategory(4, "娱乐", null, 3, 0xFF94594A),
-        SeedCategory(41, "社交", 4, 1, 0xFFC46E4A),
-        SeedCategory(42, "沉浸", 4, 0, 0xFFA8463A),
+        SeedCategory(1, "工作", null, 0, 0xFF2F6FE4),
+        SeedCategory(11, "执行", 1, 1, 0xFF2C4E8A),
+        SeedCategory(12, "沟通", 1, 0, 0xFF5C8DF6),
+        SeedCategory(2, "休息", null, 1, 0xFFA45FD1),
+        SeedCategory(21, "睡眠", 2, 0, 0xFF8E5BD9),
+        SeedCategory(22, "放空", 2, 1, 0xFF7E6BD9),
+        SeedCategory(3, "学习", null, 2, 0xFFE8A317),
+        SeedCategory(31, "输入", 3, 0, 0xFFF2A900),
+        SeedCategory(32, "输出", 3, 1, 0xFFD19A3E),
+        SeedCategory(4, "娱乐", null, 3, 0xFFC0472B),
+        SeedCategory(41, "社交", 4, 1, 0xFFF4512C),
+        SeedCategory(42, "沉浸", 4, 0, 0xFFD32F2F),
     )
 }

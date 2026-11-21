@@ -17,9 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,8 +69,8 @@ fun CategoryDot(
 
 /**
  * 时间流里的一行：左侧只在块与块的交接处显示时间，右侧是块本体。
- * 未记录的时间由虚线块占位，文案是「未记录」——它和用户真的把某段记为
- * 「未分类」是两件事，不能共用同一个名字。
+ * 没有记录的时间只保留一块安静的虚线占位，不写「未记录」、不显示「补记」；
+ * 用户想记的时候点一下就能填上，不想记也不会被反复提醒。
  *
  * 合并块里每条记录各自可点：重叠记录以前整块不可点，导致无法编辑，这里按事件拆开点击区域。
  */
@@ -127,10 +124,10 @@ fun TimelineSegmentRow(
             .weight(1f)
             .height(height)
         if (segment.isUnrecorded) {
-            // 空隙本身就是一段「未记录」时间：点它可以就地补记。
+            // 空白时间只作为可点击的入口，不显示任何催促性的文案。
             val fillable = if (onFillGap != null) {
                 blockModifier.combinedClickable(
-                    onClickLabel = "补记这段时间",
+                    onClickLabel = "记录这段时间",
                     onClick = { onFillGap() },
                     onLongClick = {},
                 )
@@ -271,16 +268,12 @@ private fun UnrecordedBlock(
     segment: TimelineSegment,
     modifier: Modifier,
 ) {
-    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-    val height = rememberBlockHeight(segment)
-    val compact = height < 48.dp
-    val showHint = height >= 48.dp
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val outline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 
     Box(
         modifier = modifier
             .background(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.16f),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
                 shape = BlockShape,
             )
             .drawBehind {
@@ -308,53 +301,8 @@ private fun UnrecordedBlock(
                         ),
                     ),
                 )
-            }
-            .padding(
-                horizontal = if (compact) 10.dp else 12.dp,
-                vertical = if (compact) 5.dp else 8.dp,
-            ),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "未记录",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 14.sp,
-                        lineHeight = 19.sp,
-                    ),
-                    color = muted.copy(alpha = 0.9f),
-                )
-                if (height >= 62.dp) {
-                    Text(
-                        text = "空档 " + DateTimeFormat.durationText(segment.startAt, segment.endAt),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        color = muted.copy(alpha = 0.62f),
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-            }
-            if (showHint) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                        modifier = Modifier.size(13.dp),
-                    )
-                    Spacer(Modifier.width(3.dp))
-                    Text(
-                        text = "补记",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                    )
-                }
-            }
-        }
-    }
+            },
+    )
 }
 
 /**

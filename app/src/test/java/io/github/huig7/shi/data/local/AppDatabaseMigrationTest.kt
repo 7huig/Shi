@@ -154,8 +154,8 @@ class AppDatabaseMigrationTest {
         }
 
     @Test
-    fun fullChain1To6_matchesSchemaAndConvertsEvents() {
-        val name = "migration-1-6"
+    fun fullChain1To8_matchesSchemaAndConvertsEvents() {
+        val name = "migration-1-8"
         createDatabase(name, 1) { db ->
             insertCategory(db, 1, "工作")
             listOf(
@@ -173,10 +173,11 @@ class AppDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            name, 6, true,
+            name, 8, true,
             AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3,
             AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5,
-            AppDatabase.MIGRATION_5_6,
+            AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7,
+            AppDatabase.MIGRATION_7_8,
         )
         db.use {
             assertEquals(listOf(1801000L, 1802000L, 1803000L), it.longColumn("SELECT endAt FROM event ORDER BY id"))
@@ -185,6 +186,42 @@ class AppDatabaseMigrationTest {
             assertEquals(3, uuids.size)
             assertTrue("uuid 应全部非空", uuids.all { uuid -> uuid.isNotBlank() })
             assertEquals("uuid 应互不相同", 3, uuids.toSet().size)
+            assertEquals(0L, it.longColumn("SELECT COUNT(*) FROM category_plan").single())
+        }
+    }
+
+    @Test
+    fun migrate6To7_createsEmptyPlanTableAndKeepsCategories() {
+        val name = "migration-6-7"
+        createDatabase(name, 6) { db ->
+            insertCategory(db, 1, "工作")
+            insertCategory(db, 2, "生活")
+        }
+
+        val db = helper.runMigrationsAndValidate(name, 7, true, AppDatabase.MIGRATION_6_7)
+        db.use {
+            assertEquals(listOf("工作", "生活"), it.stringColumn("SELECT name FROM category ORDER BY id"))
+            assertEquals(0L, it.longColumn("SELECT COUNT(*) FROM category_plan").single())
+        }
+    }
+
+    @Test
+    fun migrate6To8_recolorsOldDefaultPalette() {
+        val name = "migration-6-8"
+        createDatabase(name, 6) { db ->
+            insertCategory(db, 1, "工作", colorHex = 0xFF5A7FA8)
+            insertCategory(db, 2, "生活", colorHex = 0xFF123456)
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            name, 8, true,
+            AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8,
+        )
+        db.use {
+            assertEquals(
+                listOf(0xFF2F6FE4, 0xFF123456),
+                it.longColumn("SELECT colorHex FROM category ORDER BY id"),
+            )
         }
     }
 

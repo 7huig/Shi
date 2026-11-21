@@ -12,6 +12,8 @@ import io.github.huig7.shi.domain.StatsSummary
 import io.github.huig7.shi.domain.StatsWindow
 import io.github.huig7.shi.domain.StatsWindows
 import io.github.huig7.shi.domain.model.CategoryTree
+import io.github.huig7.shi.domain.plan.CategoryHeatmap
+import io.github.huig7.shi.domain.plan.CategoryHeatmapBuilder
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -48,6 +50,8 @@ data class StatisticsUiState(
     val summary: StatsSummary? = null,
     /** 下钻路径（自根分类到当前聚焦分类）；空表示根层。 */
     val focusPath: List<StatisticsCrumb> = emptyList(),
+    /** 只包含用户在「目标与提醒」里显式开启热力图的分类。 */
+    val heatmaps: List<CategoryHeatmap> = emptyList(),
 )
 
 /**
@@ -96,9 +100,10 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
     val uiState: StateFlow<StatisticsUiState> = combine(
         repository.timeline,
         repository.categoryTree,
+        repository.categoryPlans,
         clock,
         controls,
-    ) { events, tree, now, control ->
+    ) { events, tree, plans, now, control ->
         val zone = DateTimeFormat.zone()
         val today = StatsWindows.dateOf(now, zone)
         val window = windowOf(control, today, zone)
@@ -127,6 +132,13 @@ class StatisticsViewModel(private val repository: TimeLogRepository) : ViewModel
             summary = summary,
             // 分类被删除等情况下 build 会退回根层，面包屑跟随实际生效的聚焦分类。
             focusPath = crumbPath(tree, summary.focusCategoryId),
+            heatmaps = CategoryHeatmapBuilder.build(
+                events = events,
+                tree = tree,
+                plans = plans,
+                endDate = today,
+                zone = zone,
+            ),
         )
     }
         // 统计聚合是全量计算，不放主线程。

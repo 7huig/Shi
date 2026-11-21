@@ -18,6 +18,7 @@ import io.github.huig7.shi.domain.model.buildCategoryTree
 import io.github.huig7.shi.domain.model.checkReparent
 import io.github.huig7.shi.domain.model.legacyIdentity
 import io.github.huig7.shi.domain.model.legacyUuid
+import io.github.huig7.shi.domain.plan.CategoryPlan
 import io.github.huig7.shi.domain.resolveOverlap
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -28,11 +29,15 @@ import kotlinx.coroutines.flow.map
 class TimeLogRepository(private val database: AppDatabase) {
     private val categoryDao = database.categoryDao()
     private val eventDao = database.eventDao()
+    private val plans = CategoryPlanStore(database.categoryPlanDao())
 
     val categories: Flow<List<Category>> =
         categoryDao.observeAll().map { list -> list.map { it.toDomain() } }
 
     val categoryTree: Flow<CategoryTree> = categories.map(::buildCategoryTree)
+
+    /** 所有已配置的分类计划；没有配置的分类不在这里出现。 */
+    val categoryPlans: Flow<List<CategoryPlan>> get() = plans.plans
 
     val timeline: Flow<List<TimelineEvent>> = combine(
         eventDao.observeAll(),
@@ -47,6 +52,19 @@ class TimeLogRepository(private val database: AppDatabase) {
 
     /** 最近一条记录的分类；没有记录时为 null。 */
     suspend fun latestCategoryId(): Long? = eventDao.latestCategoryId()
+
+    suspend fun getCategoryPlan(categoryId: Long): CategoryPlan? = plans.get(categoryId)
+
+    suspend fun saveCategoryPlan(
+        plan: CategoryPlan,
+        now: Long = System.currentTimeMillis(),
+    ): CategoryPlan = plans.save(plan, now)
+
+    /** 完成一次间隔待办，返回刷新后的下一次提醒时间；没有启用间隔待办时返回 null。 */
+    suspend fun completeCategoryPlan(
+        categoryId: Long,
+        now: Long = System.currentTimeMillis(),
+    ): Long? = plans.complete(categoryId, now)
 
     /**
      * 按备注搜索，并可选按分类筛选（含该分类的整棵子树）。
@@ -311,6 +329,7 @@ class TimeLogRepository(private val database: AppDatabase) {
             exportedAt = System.currentTimeMillis(),
             categories = categoryDao.getAll().map { it.toExport() },
             events = eventDao.getAll().map { it.toExport() },
+            plans = plans.exportAll(),
         )
     }
 
@@ -327,6 +346,7 @@ class TimeLogRepository(private val database: AppDatabase) {
 
     private suspend fun restoreReplace(snapshot: LedgerSnapshot) {
         eventDao.deleteAll()
+        plans.deleteAll()
         categoryDao.deleteAll()
 
         // 旧备份可能带着空的系统「未分类」，不再恢复它；被事件引用的系统分类则保留为普通分类。
@@ -347,6 +367,7 @@ class TimeLogRepository(private val database: AppDatabase) {
             idMap[category.id] = newId
         }
         insertImportedEvents(snapshot.events, idMap, skipExisting = false)
+        plans.restore(snapshot.plans, idMap, overwrite = true)
     }
 
     private suspend fun restoreMerge(snapshot: LedgerSnapshot) {
@@ -386,6 +407,8 @@ class TimeLogRepository(private val database: AppDatabase) {
             }
         }
         insertImportedEvents(snapshot.events, idMap, skipExisting = true)
+        // 合并导入不覆盖本机已有的计划；只给新导入的分类补上备份里的计划。
+        plans.restore(snapshot.plans, idMap, overwrite = false)
     }
 
     private suspend fun insertImportedEvents(
@@ -455,44 +478,5 @@ class TimeLogRepository(private val database: AppDatabase) {
             )
         }
 
-    private fun CategoryEntity.toDomain(): Category = Category(
-        id = id,
-        name = name,
-        parentId = parentId,
-        sortOrder = sortOrder,
-        colorHex = colorHex,
-    )
-
-    private fun EventEntity.toDomain(): Event = Event(
-        id = id,
-        note = note,
-        startAt = startAt,
-        endAt = endAt,
-        categoryId = categoryId,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
-        uuid = uuid,
-    )
-
-    private fun CategoryEntity.toExport(): ExportedCategory = ExportedCategory(
-        id = id,
-        name = name,
-        parentId = parentId,
-        sortOrder = sortOrder,
-        colorHex = colorHex,
-        // isSystem 只为兼容旧备份格式保留；新导出的分类都是普通分类。
-        isSystem = false,
-    )
-
-    private fun EventEntity.toExport(): ExportedEvent = ExportedEvent(
-        note = note,
-        startAt = startAt,
-        endAt = endAt,
-        categoryId = categoryId,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
-        uuid = uuid,
-    )
 }
-
 

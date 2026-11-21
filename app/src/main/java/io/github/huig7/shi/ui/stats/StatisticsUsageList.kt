@@ -59,12 +59,6 @@ internal fun EmptyStats() {
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "回到時記，点右下角 + 记一笔；长按 + 可以直接快速记录。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -148,8 +142,9 @@ internal fun CategoryUsageRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
             )
+            // 所有行都预留同一个箭头槽：底层行留空，非底层行放箭头，
+            // 这样时长与环比在所有行上共用同一条右对齐基线。
             if (onDrill != null) {
-                // 保留 48dp 触控区域，但不让按钮撑高文字行，避免比例条被向下推。
                 Box(
                     modifier = Modifier.width(48.dp).height(24.dp),
                     contentAlignment = Alignment.Center,
@@ -166,6 +161,8 @@ internal fun CategoryUsageRow(
                         )
                     }
                 }
+            } else {
+                Spacer(Modifier.width(48.dp))
             }
         }
         Spacer(Modifier.height(6.dp))

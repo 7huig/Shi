@@ -69,14 +69,6 @@ fun DataBackupScreen(
             DataTransferSection(
                 viewModel = viewModel,
                 contentPadding = PaddingValues(horizontal = 24.dp),
-                initiallyExpanded = true,
-            )
-            Spacer(Modifier.height(20.dp))
-            Text(
-                text = "没有账号、云端同步或网络权限。",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp),
             )
             Spacer(Modifier.height(24.dp))
         }

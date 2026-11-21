@@ -1,6 +1,7 @@
 package io.github.huig7.shi.data.transfer
 
 import io.github.huig7.shi.domain.model.ExportedCategory
+import io.github.huig7.shi.domain.model.ExportedCategoryPlan
 import io.github.huig7.shi.domain.model.ExportedEvent
 import io.github.huig7.shi.domain.model.LedgerSnapshot
 import org.junit.Assert.assertEquals
@@ -29,10 +30,28 @@ class TransferJsonTest {
         uuid = "550e8400-e29b-41d4-a716-446655440000",
     )
 
+    private val plan = ExportedCategoryPlan(
+        categoryId = 11,
+        heatmapEnabled = true,
+        dailyGoalMinutes = 90,
+        fixedTimeMinuteOfDay = 23 * 60,
+        fixedTimeLabel = "冥想",
+        intervalMinutes = 60,
+        intervalLabel = "起来活动",
+        nextReminderAt = 1_700_010_000_000,
+        lastCompletedAt = 1_700_009_000_000,
+    )
+
     private fun snapshot(
         categories: List<ExportedCategory> = listOf(category),
         events: List<ExportedEvent> = listOf(event),
-    ) = LedgerSnapshot(exportedAt = 1_700_009_999_999, categories = categories, events = events)
+        plans: List<ExportedCategoryPlan> = emptyList(),
+    ) = LedgerSnapshot(
+        exportedAt = 1_700_009_999_999,
+        categories = categories,
+        events = events,
+        plans = plans,
+    )
 
     private fun assertInvalid(text: String) {
         val error = runCatching { TransferJson.decode(text) }.exceptionOrNull()
@@ -68,6 +87,18 @@ class TransferJsonTest {
         assertEquals(original, TransferJson.decode(TransferJson.encode(original)))
     }
 
+    @Test
+    fun `分类计划往返完整保留`() {
+        val original = snapshot(plans = listOf(plan))
+        assertEquals(original, TransferJson.decode(TransferJson.encode(original)))
+    }
+
+    @Test
+    fun `旧 schema 没有 plans 时按空计划读取`() {
+        val decoded = TransferJson.decode("""{"schema":2,"categories":[],"events":[]}""")
+        assertTrue(decoded.plans.isEmpty())
+    }
+
     // ---- 整体结构拒绝 ----
 
     @Test
@@ -87,7 +118,7 @@ class TransferJsonTest {
     fun `缺失或越界 schema 拒绝`() {
         assertInvalid("""{"categories":[],"events":[]}""")
         assertInvalid("""{"schema":0,"categories":[],"events":[]}""")
-        assertInvalid("""{"schema":3,"categories":[],"events":[]}""")
+        assertInvalid("""{"schema":4,"categories":[],"events":[]}""")
         assertInvalid("""{"schema":null,"categories":[],"events":[]}""")
     }
 
@@ -214,11 +245,11 @@ class TransferJsonTest {
     }
 
     @Test
-    fun `schema 1 编码输出升级为 schema 2`() {
+    fun `schema 1 编码输出升级为 schema 3`() {
         val decoded = TransferJson.decode(
             """{"schema":1,"categories":[],"events":[{"startAt":100,"endAt":200,"categoryId":1}]}""",
         )
         val reEncoded = org.json.JSONObject(TransferJson.encode(decoded))
-        assertEquals(2, reEncoded.getInt("schema"))
+        assertEquals(3, reEncoded.getInt("schema"))
     }
 }

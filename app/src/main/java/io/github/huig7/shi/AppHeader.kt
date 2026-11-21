@@ -44,6 +44,8 @@ internal fun AppHeader(
     onSelectPage: (Int) -> Unit,
     onSearch: () -> Unit,
     onOpenCategories: () -> Unit,
+    onOpenPlans: () -> Unit,
+    onOpenAnnualReport: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
@@ -92,6 +94,20 @@ internal fun AppHeader(
                     onClick = {
                         menuExpanded = false
                         onOpenCategories()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("目标与提醒") },
+                    onClick = {
+                        menuExpanded = false
+                        onOpenPlans()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("年度报告") },
+                    onClick = {
+                        menuExpanded = false
+                        onOpenAnnualReport()
                     },
                 )
                 DropdownMenuItem(

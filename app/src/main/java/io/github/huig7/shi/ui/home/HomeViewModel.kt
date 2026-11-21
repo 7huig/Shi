@@ -10,6 +10,8 @@ import io.github.huig7.shi.domain.model.TimelineBuilder
 import io.github.huig7.shi.domain.model.TimelineDay
 import io.github.huig7.shi.domain.model.TimelineEvent
 import io.github.huig7.shi.domain.model.TimelineSegment
+import io.github.huig7.shi.domain.plan.PlanPrompt
+import io.github.huig7.shi.domain.plan.PlanPromptBuilder
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
@@ -42,6 +44,8 @@ data class HomeUiState(
     val days: List<HomeDay> = emptyList(),
     val events: List<TimelineEvent> = emptyList(),
     val editor: EditorTarget? = null,
+    /** 今天的目标 / 固定时间 / 间隔待办提示；未配置任何计划时为空。 */
+    val planPrompts: List<PlanPrompt> = emptyList(),
 )
 
 sealed interface EditorTarget {
@@ -97,9 +101,11 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
 
     val uiState: StateFlow<HomeUiState> = combine(
         repository.timeline,
+        repository.categoryTree,
+        repository.categoryPlans,
         clock,
         transient,
-    ) { events, now, local ->
+    ) { events, tree, plans, now, local ->
         val zone = DateTimeFormat.zone()
         val today = DateTimeFormat.toLocalDateTime(now).toLocalDate()
         val timelineDays = if (
@@ -146,6 +152,13 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
             days = days,
             events = events,
             editor = local.editor,
+            planPrompts = PlanPromptBuilder.build(
+                plans = plans,
+                tree = tree,
+                events = events,
+                now = now,
+                zone = zone,
+            ),
         )
     }
         // 时间轴构建是全量排序聚合，不放主线程。
@@ -197,6 +210,36 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
             EditorTarget.New(startAt = startAt, endAt = endAt, isGapFill = true)
         }
         transient.update { it.copy(editor = editor) }
+    }
+
+    /** 从「今日提示」卡片直接记一笔：预填最近 30 分钟和对应分类。 */
+    fun openPlanRecord(categoryId: Long) {
+        val endAt = System.currentTimeMillis()
+        openNewRecordAt(
+            startAt = endAt - 30 * 60_000L,
+            endAt = endAt,
+            categoryId = categoryId,
+        )
+    }
+
+    /** 完成一次间隔待办：数据层把下一次提醒推到 now + interval，卡片随之刷新。 */
+    fun completePlan(categoryId: Long) {
+        viewModelScope.launch {
+            try {
+                val next = repository.completeCategoryPlan(categoryId)
+                messages.send(
+                    if (next == null) {
+                        HomeUiEvent.Message("这个分类没有开启间隔待办")
+                    } else {
+                        HomeUiEvent.Message("已完成，下次 " + DateTimeFormat.time(next))
+                    },
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                messages.send(HomeUiEvent.Message("完成失败，请重试"))
+            }
+        }
     }
 
     fun openEditRecord(eventId: Long) {

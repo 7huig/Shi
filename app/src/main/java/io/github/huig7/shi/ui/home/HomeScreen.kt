@@ -68,19 +68,28 @@ fun TimelinePage(
     onEventLongClick: (Long) -> Unit,
     onFillGap: (Long, Long) -> Unit,
     onNewRecord: () -> Unit,
+    onPlanRecord: (Long) -> Unit,
+    onPlanComplete: (Long) -> Unit,
     snackbarHostState: SnackbarHostState,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        when {
-            state.isLoading -> Unit
-            state.days.isEmpty() -> EmptyTimeline(onNewRecord = onNewRecord)
-            else -> TimelineList(
-                days = state.days,
-                onEventClick = onEventClick,
-                onEventLongClick = onEventLongClick,
-                onFillGap = onFillGap,
-                snackbarHostState = snackbarHostState,
-            )
+    Column(modifier = Modifier.fillMaxSize()) {
+        PlanPromptStrip(
+            prompts = state.planPrompts,
+            onRecord = onPlanRecord,
+            onComplete = onPlanComplete,
+        )
+        Box(modifier = Modifier.weight(1f)) {
+            when {
+                state.isLoading -> Unit
+                state.days.isEmpty() -> EmptyTimeline(onNewRecord = onNewRecord)
+                else -> TimelineList(
+                    days = state.days,
+                    onEventClick = onEventClick,
+                    onEventLongClick = onEventLongClick,
+                    onFillGap = onFillGap,
+                    snackbarHostState = snackbarHostState,
+                )
+            }
         }
     }
 }
@@ -140,12 +149,6 @@ private fun EmptyTimeline(onNewRecord: () -> Unit) {
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = "先记下刚刚做过的一件事；不必一次记准，之后随时可以改。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         Spacer(Modifier.height(20.dp))
         Button(
             onClick = onNewRecord,
@@ -158,12 +161,6 @@ private fun EmptyTimeline(onNewRecord: () -> Unit) {
         ) {
             Text("记下刚刚的 30 分钟", style = MaterialTheme.typography.labelLarge)
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "也可以点右下角的 +；长按它可以直接快速记录。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -259,13 +256,8 @@ private fun indexOfDay(days: List<HomeDay>, date: LocalDate): Int? {
 @Composable
 private fun DayHeader(day: HomeDay, onDateClick: () -> Unit) {
     val recorded = day.segments.filterNot { it.isUnrecorded }.sumOf { it.endAt - it.startAt }
-    val gap = day.segments.filter { it.isUnrecorded }.sumOf { it.endAt - it.startAt }
-    val summary = buildString {
-        append("已记录 ").append(DateTimeFormat.durationText(recorded))
-        if (gap > 0L) {
-            append(" · 空档 ").append(DateTimeFormat.durationText(gap))
-        }
-    }
+    // 只说自己记下了多少，不统计空白时长；记录不完整不是一种需要被纠正的错误。
+    val summary = if (recorded > 0L) "已记录 " + DateTimeFormat.durationText(recorded) else null
 
     Column(
         modifier = Modifier
@@ -295,19 +287,21 @@ private fun DayHeader(day: HomeDay, onDateClick: () -> Unit) {
                 modifier = Modifier.size(15.dp),
             )
         }
-        Spacer(Modifier.height(5.dp))
-        Text(
-            text = summary,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-            maxLines = 1,
-        )
+        if (summary != null) {
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                maxLines = 1,
+            )
+        }
         Spacer(Modifier.height(5.dp))
         DayOverviewBar(day = day, modifier = Modifier.fillMaxWidth().height(4.dp))
     }
 }
 
-/** 一天 24 小时的记录密度：有记录的弧段用分类色，空档保持轨道色。 */
+/** 一天 24 小时的记录密度：有记录的弧段用分类色，没有记录的时间保持轨道色。 */
 @Composable
 private fun DayOverviewBar(day: HomeDay, modifier: Modifier) {
     val zone = DateTimeFormat.zone()

@@ -7,20 +7,23 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import io.github.huig7.shi.data.local.dao.CategoryDao
+import io.github.huig7.shi.data.local.dao.CategoryPlanDao
 import io.github.huig7.shi.data.local.dao.EventDao
 import io.github.huig7.shi.data.local.entity.CategoryEntity
+import io.github.huig7.shi.data.local.entity.CategoryPlanEntity
 import io.github.huig7.shi.data.local.entity.EventEntity
 import io.github.huig7.shi.data.seed.DefaultCategories
 import java.util.UUID
 
 @Database(
-    entities = [CategoryEntity::class, EventEntity::class],
-    version = 6,
+    entities = [CategoryEntity::class, EventEntity::class, CategoryPlanEntity::class],
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun eventDao(): EventDao
+    abstract fun categoryPlanDao(): CategoryPlanDao
 
     companion object {
         fun create(context: Context): AppDatabase =
@@ -31,6 +34,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
                 )
                 .addCallback(SeedCallback())
                 .build()
@@ -171,6 +176,65 @@ abstract class AppDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
                 db.execSQL("UPDATE category SET isSystem = 0 WHERE isSystem = 1")
+            }
+        }
+
+        /**
+         * v7 新增分类计划表：热力图、每日目标、固定时间事项与间隔待办。
+         *
+         * 外键用 CASCADE，删除分类时计划一起消失；旧数据没有计划，迁移后保持为空。
+         */
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `category_plan` (
+                        `categoryId` INTEGER NOT NULL,
+                        `heatmapEnabled` INTEGER NOT NULL,
+                        `dailyGoalMinutes` INTEGER NOT NULL,
+                        `fixedTimeMinuteOfDay` INTEGER NOT NULL,
+                        `fixedTimeLabel` TEXT,
+                        `intervalMinutes` INTEGER NOT NULL,
+                        `intervalLabel` TEXT,
+                        `nextReminderAt` INTEGER NOT NULL,
+                        `lastCompletedAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`categoryId`),
+                        FOREIGN KEY(`categoryId`) REFERENCES `category`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        /**
+         * v8 把默认分类从低饱和节气色换成高饱和版本。
+         *
+         * 只改仍是旧默认色的 12 个固定 ID，用户自己挑过的颜色保持不动；
+         * 自定义分类若恰好用了旧色板中的颜色，也会一起更新，保持整棵树的新配色一致。
+         */
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                recolor(db, 1, 0xFF5A7FA8, 0xFF2F6FE4)
+                recolor(db, 11, 0xFF3F5B78, 0xFF2C4E8A)
+                recolor(db, 12, 0xFF8A9AB8, 0xFF5C8DF6)
+                recolor(db, 2, 0xFF9E86B8, 0xFFA45FD1)
+                recolor(db, 21, 0xFF8B72A6, 0xFF8E5BD9)
+                recolor(db, 22, 0xFF8A86A8, 0xFF7E6BD9)
+                recolor(db, 3, 0xFFC9A24E, 0xFFE8A317)
+                recolor(db, 31, 0xFFB8933F, 0xFFF2A900)
+                recolor(db, 32, 0xFFA98A5A, 0xFFD19A3E)
+                recolor(db, 4, 0xFF94594A, 0xFFC0472B)
+                recolor(db, 41, 0xFFC46E4A, 0xFFF4512C)
+                recolor(db, 42, 0xFFA8463A, 0xFFD32F2F)
+            }
+
+            private fun recolor(db: SupportSQLiteDatabase, id: Long, oldColor: Long, newColor: Long) {
+                db.execSQL(
+                    "UPDATE category SET colorHex = ? WHERE id = ? AND colorHex = ?",
+                    arrayOf<Any?>(newColor, id, oldColor),
+                )
             }
         }
 

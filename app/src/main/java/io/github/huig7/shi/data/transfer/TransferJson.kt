@@ -1,6 +1,7 @@
 package io.github.huig7.shi.data.transfer
 
 import io.github.huig7.shi.domain.model.ExportedCategory
+import io.github.huig7.shi.domain.model.ExportedCategoryPlan
 import io.github.huig7.shi.domain.model.ExportedEvent
 import io.github.huig7.shi.domain.model.LedgerSnapshot
 import org.json.JSONArray
@@ -10,14 +11,15 @@ import org.json.JSONObject
 /**
  * 备份文件的 JSON 编解码。
  *
- * 当前写出 { schema: 2, exportedAt, categories: [...], events: [...] }，并兼容读取 schema 1。
+ * 当前写出 { schema: 3, exportedAt, categories: [...], events: [...], plans: [...] }，
+ * 并兼容读取 schema 1 / 2（旧文件没有 plans，导入后计划保持未配置）。
  * 只依赖 Android 自带的 org.json，不引入额外依赖。
  *
  * 读取失败统一抛 [IllegalArgumentException]（文案「不是有效的数据文件」），
  * 方便调用方把 message 直接展示给用户；note 缺失 / 为空按 null 处理。
  */
 object TransferJson {
-    private const val SCHEMA_VERSION = 2
+    private const val SCHEMA_VERSION = 3
     private const val MIN_SUPPORTED_SCHEMA = 1
     private const val FALLBACK_COLOR = 0xFF9AA29A
     private const val INVALID_MESSAGE = "不是有效的数据文件"
@@ -56,11 +58,29 @@ object TransferJson {
             )
         }
 
+        val plans = JSONArray()
+        snapshot.plans.forEach { plan ->
+            plans.put(
+                JSONObject().apply {
+                    put("categoryId", plan.categoryId)
+                    put("heatmapEnabled", plan.heatmapEnabled)
+                    put("dailyGoalMinutes", plan.dailyGoalMinutes)
+                    put("fixedTimeMinuteOfDay", plan.fixedTimeMinuteOfDay)
+                    put("fixedTimeLabel", plan.fixedTimeLabel ?: JSONObject.NULL)
+                    put("intervalMinutes", plan.intervalMinutes)
+                    put("intervalLabel", plan.intervalLabel ?: JSONObject.NULL)
+                    put("nextReminderAt", plan.nextReminderAt)
+                    put("lastCompletedAt", plan.lastCompletedAt)
+                },
+            )
+        }
+
         return JSONObject().apply {
             put("schema", SCHEMA_VERSION)
             put("exportedAt", snapshot.exportedAt)
             put("categories", categories)
             put("events", events)
+            put("plans", plans)
         }.toString(2)
     }
 
@@ -97,10 +117,22 @@ object TransferJson {
             }
         }
 
+        val plans = if (root.has("plans") && !root.isNull("plans")) {
+            val planArray = root.getJSONArray("plans")
+            buildList(planArray.length()) {
+                for (index in 0 until planArray.length()) {
+                    add(planArray.getJSONObject(index).toPlan())
+                }
+            }
+        } else {
+            emptyList()
+        }
+
         return LedgerSnapshot(
             exportedAt = exportedAt,
             categories = categories,
             events = events,
+            plans = plans,
         )
     }
 
@@ -141,6 +173,29 @@ object TransferJson {
             createdAt = createdAt,
             updatedAt = updatedAt,
             uuid = if (has("uuid") && !isNull("uuid")) getString("uuid").trim().ifEmpty { null } else null,
+        )
+    }
+
+    private fun JSONObject.toPlan(): ExportedCategoryPlan {
+        if (!has("categoryId") || isNull("categoryId")) invalid()
+        return ExportedCategoryPlan(
+            categoryId = getLong("categoryId"),
+            heatmapEnabled = optBoolean("heatmapEnabled", false),
+            dailyGoalMinutes = optInt("dailyGoalMinutes", 0),
+            fixedTimeMinuteOfDay = optInt("fixedTimeMinuteOfDay", -1),
+            fixedTimeLabel = if (has("fixedTimeLabel") && !isNull("fixedTimeLabel")) {
+                getString("fixedTimeLabel").trim().ifEmpty { null }
+            } else {
+                null
+            },
+            intervalMinutes = optInt("intervalMinutes", 0),
+            intervalLabel = if (has("intervalLabel") && !isNull("intervalLabel")) {
+                getString("intervalLabel").trim().ifEmpty { null }
+            } else {
+                null
+            },
+            nextReminderAt = optLong("nextReminderAt", 0L),
+            lastCompletedAt = optLong("lastCompletedAt", 0L),
         )
     }
 

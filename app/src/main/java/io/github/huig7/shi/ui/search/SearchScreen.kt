@@ -503,12 +503,6 @@ private fun SearchHint() {    Column(
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = "输入关键词，就能找到备注里包含它的记录；也可以只按分类筛选。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

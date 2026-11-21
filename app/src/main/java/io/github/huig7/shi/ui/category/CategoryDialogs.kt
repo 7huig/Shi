@@ -97,12 +97,6 @@ internal fun CategoryEditorDialog(
                             )
                         }
                     }
-                    Text(
-                        text = "可把子分类升为顶层，或把整个分类移到其他分类下，最多 3 层。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
                     Spacer(modifier = Modifier.height(12.dp))
                 } else if (parentName != null) {
                     Text(

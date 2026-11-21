@@ -84,7 +84,7 @@ fun RecordSheet(
     val title = when {
         state.isEditing -> "编辑记录"
         state.needsReview -> "确认这段时间"
-        state.isGapFill -> "补记这段时间"
+        state.isGapFill -> "记录这段时间"
         else -> "记录一段"
     }
 
@@ -207,7 +207,7 @@ fun RecordSheet(
                             ),
                         ) {
                             Text(
-                                text = "补齐整段空档（" +
+                                text = "补齐整段（" +
                                     DateTimeFormat.durationText(
                                         state.wholeGapStartAt,
                                         state.wholeGapEndAt,

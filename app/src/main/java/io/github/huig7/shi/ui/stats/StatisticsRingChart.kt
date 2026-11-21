@@ -205,15 +205,6 @@ internal fun RingSection(
                 }
             }
         }
-        if (!isEmpty) {
-            Text(
-                text = "内 → 外：一级 · 二级 · 三级",
-                modifier = Modifier.padding(top = 2.dp),
-                fontSize = 10.sp,
-                color = mutedColor,
-                maxLines = 1,
-            )
-        }
     }
 }
 

@@ -1,6 +1,5 @@
 package io.github.huig7.shi.ui.stats
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
@@ -45,7 +43,6 @@ import io.github.huig7.shi.ui.theme.RiseRed
 import io.github.huig7.shi.ui.theme.RiseRedDark
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.LocalDate
-import kotlin.math.roundToInt
 
 /** 下钻层数上限：环形图最多三层（见 [io.github.huig7.shi.domain.StatsBuilder.MAX_DEPTH]），最多再进入两级。 */
 private const val MAX_DRILL_LEVELS = 2
@@ -92,6 +89,7 @@ fun StatisticsScreen(
             .verticalScroll(rememberScrollState())
             .padding(top = 4.dp, bottom = 16.dp),
     ) {
+        CategoryHeatmapSection(heatmaps = state.heatmaps)
         ModeSelector(
             mode = state.mode,
             onModeSelected = onModeSelected,
@@ -113,11 +111,6 @@ fun StatisticsScreen(
                 onDrillUp = onDrillUp,
                 onCrumbSelected = onCrumbSelected,
             )
-        }
-        summary?.let {
-            if (it.totalMillis > 0L && it.elapsedMillis > 0L) {
-                CoverageSection(summary = it)
-            }
         }
         when {
             state.isLoading -> Unit
@@ -172,51 +165,6 @@ fun StatisticsScreen(
                 onCustomRangeSelected(start, end)
             },
         )
-    }
-}
-
-/** 窗口内有记录的墙钟占比：把「已记录」和「一天 / 一周」分开，避免把环图的满圆误读成整天。 */
-@Composable
-private fun CoverageSection(summary: io.github.huig7.shi.domain.StatsSummary) {
-    val elapsed = summary.elapsedMillis
-    if (elapsed <= 0L) return
-    val ratio = (summary.coveredMillis.toDouble() / elapsed.toDouble()).toFloat().coerceIn(0f, 1f)
-    val percent = (ratio * 100f).roundToInt()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 6.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "已记录 $percent%",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = DateTimeFormat.durationText(summary.coveredMillis) + " / " +
-                    DateTimeFormat.durationText(elapsed),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(ratio)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(MaterialTheme.colorScheme.primary),
-            )
-        }
     }
 }
 

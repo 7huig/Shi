@@ -16,7 +16,7 @@ sealed interface QuickRecordResult {
 data class RecordUiState(
     val isEditing: Boolean = false,
     val eventId: Long? = null,
-    /** 由时间轴空隙进入时为 true，标题用「补记」而不是「记录一段」。 */
+    /** 由时间轴空白处进入时为 true，标题用「记录这段时间」而不是「记录一段」。 */
     val isGapFill: Boolean = false,
     /** 从快速记录的重叠退回时为 true，表单顶部给一句解释。 */
     val needsReview: Boolean = false,
