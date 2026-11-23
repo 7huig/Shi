@@ -38,7 +38,7 @@
 
 | 记录表单 | 分类编辑 | 分类管理 | 备注搜索 |
 |:---:|:---:|:---:|:---:|
-| <img src="docs/screenshots/record-sheet.webp" width="220" alt="记录表单：三级分类三栏、开始结束与时长"> | <img src="docs/screenshots/category-editor.webp" width="220" alt="分类编辑：节气色板"> | <img src="docs/screenshots/categories.webp" width="220" alt="分类管理：展开收起与拖动排序"> | <img src="docs/screenshots/search.webp" width="220" alt="备注搜索与时间总和"> |
+| <img src="docs/screenshots/record-sheet.webp" width="220" alt="记录表单：三级分类三栏、开始结束与时长"> | <img src="docs/screenshots/category-editor.webp" width="220" alt="分类编辑：颜色默认收起"> | <img src="docs/screenshots/categories.webp" width="220" alt="分类管理：目标提醒图标、展开与拖动排序"> | <img src="docs/screenshots/search.webp" width="220" alt="备注搜索与时间总和"> |
 
 深色模式：[时间轴](docs/screenshots/home-dark.webp) · [统计](docs/screenshots/stats-dark.webp)
 
