@@ -2,7 +2,9 @@ package io.github.huig7.shi.ui.plan
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,9 +16,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -44,7 +53,8 @@ internal fun CategoryPlanEditorDialog(
     onDismiss: () -> Unit,
     onSave: () -> Unit,
 ) {
-    var showTimePicker by rememberSaveable(editor.categoryId) { mutableStateOf(false) }
+    // 0 表示没有打开时间选择器；数据库里的固定时间 id 都是正数，新建草稿是负数。
+    var pickerKey by rememberSaveable(editor.categoryId) { mutableStateOf(0L) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -76,7 +86,7 @@ internal fun CategoryPlanEditorDialog(
                 )
 
                 PlanToggleRow(
-                    title = "每日时长目标",
+                    title = "每日时长",
                     checked = editor.goalEnabled,
                     onCheckedChange = viewModel::setGoalEnabled,
                 )
@@ -107,32 +117,32 @@ internal fun CategoryPlanEditorDialog(
                 )
 
                 PlanToggleRow(
-                    title = "固定时间事项",
+                    title = "固定时间",
                     checked = editor.fixedEnabled,
                     onCheckedChange = viewModel::setFixedEnabled,
                 )
                 if (editor.fixedEnabled) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            onClick = { showTimePicker = true },
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                        ) {
-                            Text(
-                                text = clockText(editor.fixedMinuteOfDay),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(
-                            value = editor.fixedLabel,
-                            onValueChange = viewModel::setFixedLabel,
-                            label = { Text("事项名称（默认分类名）") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
+                    editor.fixedTimes.forEach { fixed ->
+                        FixedTimeRow(
+                            fixed = fixed,
+                            categoryName = editor.categoryName,
+                            onTimeClick = { pickerKey = fixed.key },
+                            onLabelChange = { viewModel.setFixedTimeLabel(fixed.key, it) },
+                            onLeadChange = { viewModel.setFixedTimeLead(fixed.key, it) },
+                            onRemove = { viewModel.removeFixedTime(fixed.key) },
                         )
+                    }
+                    TextButton(
+                        onClick = viewModel::addFixedTime,
+                        enabled = editor.fixedTimes.size < MAX_FIXED_TIMES,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = null,
+                            modifier = Modifier.width(18.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("添加时间")
                     }
                 }
 
@@ -189,20 +199,115 @@ internal fun CategoryPlanEditorDialog(
         },
     )
 
-    if (showTimePicker) {
+    val picking = editor.fixedTimes.firstOrNull { it.key == pickerKey }
+    if (picking != null) {
         TimePickerDialog(
             initialTime = LocalTime.of(
-                editor.fixedMinuteOfDay / 60,
-                editor.fixedMinuteOfDay % 60,
+                picking.minuteOfDay / 60,
+                picking.minuteOfDay % 60,
             ),
-            onDismiss = { showTimePicker = false },
+            onDismiss = { pickerKey = 0L },
             onConfirm = { time ->
-                showTimePicker = false
-                viewModel.setFixedMinuteOfDay(time.hour * 60 + time.minute)
+                viewModel.setFixedTimeMinute(picking.key, time.hour * 60 + time.minute)
+                pickerKey = 0L
             },
         )
     }
 }
+
+@Composable
+private fun FixedTimeRow(
+    fixed: FixedTimeDraft,
+    categoryName: String,
+    onTimeClick: () -> Unit,
+    onLabelChange: (String) -> Unit,
+    onLeadChange: (Int) -> Unit,
+    onRemove: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                onClick = onTimeClick,
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+            ) {
+                Text(
+                    text = clockText(fixed.minuteOfDay),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = fixed.label,
+                onValueChange = onLabelChange,
+                label = { Text("事项名称") },
+                placeholder = { Text(categoryName, fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onRemove) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "删除这个时间",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "提前提示",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(4.dp))
+            LeadTimeMenu(leadMinutes = fixed.leadMinutes, onSelect = onLeadChange)
+        }
+    }
+}
+
+@Composable
+private fun LeadTimeMenu(leadMinutes: Int, onSelect: (Int) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        TextButton(
+            onClick = { expanded = true },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        ) {
+            Text(
+                text = leadText(leadMinutes),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            LEAD_OPTIONS.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(leadText(option)) },
+                    onClick = {
+                        expanded = false
+                        onSelect(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun leadText(minutes: Int): String =
+    if (minutes <= 0) "准时提醒" else "提前 $minutes 分钟"
+
+/** 给编辑弹窗复用：把分钟数格式化成 HH:mm。 */
+internal fun clockText(minuteOfDay: Int): String =
+    "%02d:%02d".format(minuteOfDay / 60, minuteOfDay % 60)
+
+private val LEAD_OPTIONS = listOf(0, 5, 10, 15, 30, 60, 120)
+
+private const val MAX_FIXED_TIMES = 8
 
 /** 开关行：整行可点，避免只有小开关可点导致大字号下难点。 */
 @Composable

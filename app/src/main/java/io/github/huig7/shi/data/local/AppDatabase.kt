@@ -9,21 +9,29 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import io.github.huig7.shi.data.local.dao.CategoryDao
 import io.github.huig7.shi.data.local.dao.CategoryPlanDao
 import io.github.huig7.shi.data.local.dao.EventDao
+import io.github.huig7.shi.data.local.dao.FixedTimeDao
 import io.github.huig7.shi.data.local.entity.CategoryEntity
 import io.github.huig7.shi.data.local.entity.CategoryPlanEntity
 import io.github.huig7.shi.data.local.entity.EventEntity
+import io.github.huig7.shi.data.local.entity.FixedTimeEntity
 import io.github.huig7.shi.data.seed.DefaultCategories
 import java.util.UUID
 
 @Database(
-    entities = [CategoryEntity::class, EventEntity::class, CategoryPlanEntity::class],
-    version = 8,
+    entities = [
+        CategoryEntity::class,
+        EventEntity::class,
+        CategoryPlanEntity::class,
+        FixedTimeEntity::class,
+    ],
+    version = 11,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun eventDao(): EventDao
     abstract fun categoryPlanDao(): CategoryPlanDao
+    abstract fun fixedTimeDao(): FixedTimeDao
 
     companion object {
         fun create(context: Context): AppDatabase =
@@ -36,6 +44,9 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
                 )
                 .addCallback(SeedCallback())
                 .build()
@@ -235,6 +246,158 @@ abstract class AppDatabase : RoomDatabase() {
                     "UPDATE category SET colorHex = ? WHERE id = ? AND colorHex = ?",
                     arrayOf<Any?>(newColor, id, oldColor),
                 )
+            }
+        }
+
+        /**
+         * v9 把单个固定时间拆成独立表，支持同一分类一天多个时间点与提前提示。
+         *
+         * 旧配置原样搬进 `fixed_time`（提前分钟为 0），然后重建 `category_plan` 去掉
+         * 两个固定时间字段；重建而不是保留废弃列，避免实体与表结构长期不一致。
+         */
+        internal val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `fixed_time` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `categoryId` INTEGER NOT NULL,
+                        `minuteOfDay` INTEGER NOT NULL,
+                        `label` TEXT,
+                        `leadMinutes` INTEGER NOT NULL,
+                        FOREIGN KEY(`categoryId`) REFERENCES `category`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_fixed_time_categoryId` " +
+                        "ON `fixed_time` (`categoryId`)",
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `fixed_time` (`categoryId`, `minuteOfDay`, `label`, `leadMinutes`)
+                    SELECT `categoryId`, `fixedTimeMinuteOfDay`, `fixedTimeLabel`, 0
+                    FROM `category_plan`
+                    WHERE `fixedTimeMinuteOfDay` BETWEEN 0 AND 1439
+                    """.trimIndent(),
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `category_plan_new` (
+                        `categoryId` INTEGER NOT NULL,
+                        `heatmapEnabled` INTEGER NOT NULL,
+                        `dailyGoalMinutes` INTEGER NOT NULL,
+                        `intervalMinutes` INTEGER NOT NULL,
+                        `intervalLabel` TEXT,
+                        `nextReminderAt` INTEGER NOT NULL,
+                        `lastCompletedAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`categoryId`),
+                        FOREIGN KEY(`categoryId`) REFERENCES `category`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `category_plan_new` (
+                        `categoryId`, `heatmapEnabled`, `dailyGoalMinutes`,
+                        `intervalMinutes`, `intervalLabel`, `nextReminderAt`,
+                        `lastCompletedAt`, `updatedAt`
+                    )
+                    SELECT `categoryId`, `heatmapEnabled`, `dailyGoalMinutes`,
+                           `intervalMinutes`, `intervalLabel`, `nextReminderAt`,
+                           `lastCompletedAt`, `updatedAt`
+                    FROM `category_plan`
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE `category_plan`")
+                db.execSQL("ALTER TABLE `category_plan_new` RENAME TO `category_plan`")
+            }
+        }
+
+        /**
+         * v10 收回高饱和配色，恢复低饱和节气色。
+         *
+         * v8 曾把默认分类和高饱和色板写进旧数据；这里把仍在使用这套高饱和色值的分类
+         * 映射回对应的低饱和颜色。用户自选的其它颜色保持不变。
+         */
+        internal val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                PALETTE_MIGRATION.forEach { (vibrant, muted) ->
+                    db.execSQL(
+                        "UPDATE category SET colorHex = ? WHERE colorHex = ?",
+                        arrayOf<Any?>(muted, vibrant),
+                    )
+                }
+            }
+        }
+
+        private val PALETTE_MIGRATION = listOf(
+            0xFF4CAF50L to 0xFF7D9E6E,
+            0xFF26A69AL to 0xFF6E97A3,
+            0xFF00A884L to 0xFF5E9C90,
+            0xFFEC6B8AL to 0xFFC48E8E,
+            0xFF8E5BD9L to 0xFF8B72A6,
+            0xFFD19A3EL to 0xFFA98A5A,
+            0xFF7CB342L to 0xFF6E9A4C,
+            0xFFF2A900L to 0xFFB8933F,
+            0xFF9CB539L to 0xFF8C9A46,
+            0xFFF57C00L to 0xFFC9853F,
+            0xFFF4512CL to 0xFFC46E4A,
+            0xFFD32F2FL to 0xFFA8463A,
+            0xFFD4A017L to 0xFFB99A50,
+            0xFFA45FD1L to 0xFF9E86B8,
+            0xFF5C8DF6L to 0xFF8A9AB8,
+            0xFFE8A317L to 0xFFC9A24E,
+            0xFF2F6FE4L to 0xFF5A7FA8,
+            0xFFC0472BL to 0xFF94594A,
+            0xFF2E7D6EL to 0xFF4E7368,
+            0xFF7E6BD9L to 0xFF8A86A8,
+            0xFF4C6FA8L to 0xFF62788E,
+            0xFF2C4E8AL to 0xFF3F5B78,
+            0xFF2F8FA3L to 0xFF557E92,
+            0xFF1F3A5FL to 0xFF35505F,
+        )
+
+        /**
+         * v11 去掉手动完成：间隔待办只根据记录自动刷新，不再保存 lastCompletedAt。
+         *
+         * 重建 category_plan 表移除该列；nextReminderAt 保留，作为没有任何记录时的起始排期。
+         */
+        internal val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `category_plan_new` (
+                        `categoryId` INTEGER NOT NULL,
+                        `heatmapEnabled` INTEGER NOT NULL,
+                        `dailyGoalMinutes` INTEGER NOT NULL,
+                        `intervalMinutes` INTEGER NOT NULL,
+                        `intervalLabel` TEXT,
+                        `nextReminderAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`categoryId`),
+                        FOREIGN KEY(`categoryId`) REFERENCES `category`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `category_plan_new` (
+                        `categoryId`, `heatmapEnabled`, `dailyGoalMinutes`,
+                        `intervalMinutes`, `intervalLabel`, `nextReminderAt`, `updatedAt`
+                    )
+                    SELECT `categoryId`, `heatmapEnabled`, `dailyGoalMinutes`,
+                           `intervalMinutes`, `intervalLabel`, `nextReminderAt`, `updatedAt`
+                    FROM `category_plan`
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE `category_plan`")
+                db.execSQL("ALTER TABLE `category_plan_new` RENAME TO `category_plan`")
             }
         }
 

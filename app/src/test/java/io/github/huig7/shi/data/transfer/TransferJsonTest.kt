@@ -3,6 +3,7 @@ package io.github.huig7.shi.data.transfer
 import io.github.huig7.shi.domain.model.ExportedCategory
 import io.github.huig7.shi.domain.model.ExportedCategoryPlan
 import io.github.huig7.shi.domain.model.ExportedEvent
+import io.github.huig7.shi.domain.model.ExportedFixedTime
 import io.github.huig7.shi.domain.model.LedgerSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -34,12 +35,13 @@ class TransferJsonTest {
         categoryId = 11,
         heatmapEnabled = true,
         dailyGoalMinutes = 90,
-        fixedTimeMinuteOfDay = 23 * 60,
-        fixedTimeLabel = "冥想",
+        fixedTimes = listOf(
+            ExportedFixedTime(minuteOfDay = 9 * 60, label = "晨间计划", leadMinutes = 15),
+            ExportedFixedTime(minuteOfDay = 23 * 60, label = "冥想", leadMinutes = 0),
+        ),
         intervalMinutes = 60,
         intervalLabel = "起来活动",
         nextReminderAt = 1_700_010_000_000,
-        lastCompletedAt = 1_700_009_000_000,
     )
 
     private fun snapshot(
@@ -118,7 +120,7 @@ class TransferJsonTest {
     fun `缺失或越界 schema 拒绝`() {
         assertInvalid("""{"categories":[],"events":[]}""")
         assertInvalid("""{"schema":0,"categories":[],"events":[]}""")
-        assertInvalid("""{"schema":4,"categories":[],"events":[]}""")
+        assertInvalid("""{"schema":6,"categories":[],"events":[]}""")
         assertInvalid("""{"schema":null,"categories":[],"events":[]}""")
     }
 
@@ -176,7 +178,7 @@ class TransferJsonTest {
     fun `事件缺失必填时间或分类拒绝`() {
         val base = """{"startAt":100,"endAt":200,"categoryId":1}"""
         listOf("startAt", "endAt", "categoryId").forEach { field ->
-            val broken = org.json.JSONObject(base).remove(field).toString()
+            val broken = org.json.JSONObject(base).apply { remove(field) }.toString()
             assertInvalid("""{"schema":2,"categories":[],"events":[$broken]}""")
         }
     }
@@ -245,11 +247,39 @@ class TransferJsonTest {
     }
 
     @Test
-    fun `schema 1 编码输出升级为 schema 3`() {
+    fun `schema 1 编码输出升级为 schema 5`() {
         val decoded = TransferJson.decode(
             """{"schema":1,"categories":[],"events":[{"startAt":100,"endAt":200,"categoryId":1}]}""",
         )
         val reEncoded = org.json.JSONObject(TransferJson.encode(decoded))
-        assertEquals(3, reEncoded.getInt("schema"))
+        assertEquals(5, reEncoded.getInt("schema"))
+    }
+
+    @Test
+    fun `schema 4 的旧完成字段被忽略`() {
+        val decoded = TransferJson.decode(
+            """
+            {"schema":4,"categories":[],"events":[],"plans":[
+              {"categoryId":1,"intervalMinutes":30,"nextReminderAt":5000,"lastCompletedAt":4000}
+            ]}
+            """.trimIndent(),
+        )
+        assertEquals(5000L, decoded.plans.single().nextReminderAt)
+    }
+
+    @Test
+    fun `schema 3 的单个固定时间读成一条记录`() {
+        val decoded = TransferJson.decode(
+            """
+            {"schema":3,"categories":[],"events":[],"plans":[
+              {"categoryId":1,"dailyGoalMinutes":30,"fixedTimeMinuteOfDay":540,
+               "fixedTimeLabel":"晨间计划","intervalMinutes":0}
+            ]}
+            """.trimIndent(),
+        )
+        val fixed = decoded.plans.single().fixedTimes.single()
+        assertEquals(9 * 60, fixed.minuteOfDay)
+        assertEquals("晨间计划", fixed.label)
+        assertEquals(0, fixed.leadMinutes)
     }
 }

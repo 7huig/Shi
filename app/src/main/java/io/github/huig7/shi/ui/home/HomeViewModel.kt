@@ -222,26 +222,6 @@ class HomeViewModel(private val repository: TimeLogRepository) : ViewModel() {
         )
     }
 
-    /** 完成一次间隔待办：数据层把下一次提醒推到 now + interval，卡片随之刷新。 */
-    fun completePlan(categoryId: Long) {
-        viewModelScope.launch {
-            try {
-                val next = repository.completeCategoryPlan(categoryId)
-                messages.send(
-                    if (next == null) {
-                        HomeUiEvent.Message("这个分类没有开启间隔待办")
-                    } else {
-                        HomeUiEvent.Message("已完成，下次 " + DateTimeFormat.time(next))
-                    },
-                )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                messages.send(HomeUiEvent.Message("完成失败，请重试"))
-            }
-        }
-    }
-
     fun openEditRecord(eventId: Long) {
         transient.update { it.copy(editor = EditorTarget.Edit(eventId)) }
     }

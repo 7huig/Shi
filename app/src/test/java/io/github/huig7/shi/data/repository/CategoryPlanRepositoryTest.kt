@@ -7,6 +7,7 @@ import io.github.huig7.shi.data.local.AppDatabase
 import io.github.huig7.shi.data.local.entity.CategoryEntity
 import io.github.huig7.shi.domain.model.ImportMode
 import io.github.huig7.shi.domain.plan.CategoryPlan
+import io.github.huig7.shi.domain.plan.FixedTimePlan
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -16,7 +17,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** 分类计划的保存与「完成后刷新时间」口径。 */
+/** 分类计划的保存与「下一次提醒」口径；间隔只由记录自动推进。 */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CategoryPlanRepositoryTest {
@@ -34,7 +35,7 @@ class CategoryPlanRepositoryTest {
         )
 
     @Test
-    fun intervalStartsFromNowAndCompletionRefreshesIt() = runBlocking {
+    fun intervalStartsFromNow() = runBlocking {
         val db = database()
         try {
             val categoryId = addCategory(db, "健康")
@@ -48,13 +49,9 @@ class CategoryPlanRepositoryTest {
                 now = 1_000L,
             )
             assertEquals(1_000L + 3_600_000L, saved.nextReminderAt)
-            assertNull(saved.lastCompletedAt)
 
-            val next = repository.completeCategoryPlan(categoryId, now = 2_000L)
-            assertEquals(2_000L + 3_600_000L, next)
             val reloaded = repository.getCategoryPlan(categoryId)!!
-            assertEquals(2_000L, reloaded.lastCompletedAt)
-            assertEquals(2_000L + 3_600_000L, reloaded.nextReminderAt)
+            assertEquals(1_000L + 3_600_000L, reloaded.nextReminderAt)
         } finally {
             db.close()
         }
@@ -83,7 +80,6 @@ class CategoryPlanRepositoryTest {
                 now = 3_000L,
             )
             assertEquals(3_000L + 1_800_000L, changed.nextReminderAt)
-            assertNull("改了间隔相当于重新开始计时", changed.lastCompletedAt)
         } finally {
             db.close()
         }
@@ -118,8 +114,9 @@ class CategoryPlanRepositoryTest {
                     categoryId = categoryId,
                     heatmapEnabled = true,
                     dailyGoalMinutes = 45,
-                    fixedTimeMinuteOfDay = 22 * 60,
-                    fixedTimeLabel = "拉伸",
+                    fixedTimes = listOf(
+                        FixedTimePlan(minuteOfDay = 22 * 60, label = "拉伸", leadMinutes = 10),
+                    ),
                     intervalMinutes = 90,
                     intervalLabel = "喝水",
                 ),
@@ -131,11 +128,62 @@ class CategoryPlanRepositoryTest {
             val restored = repository.getCategoryPlan(categoryId)!!
             assertEquals(saved.heatmapEnabled, restored.heatmapEnabled)
             assertEquals(saved.dailyGoalMinutes, restored.dailyGoalMinutes)
-            assertEquals(saved.fixedTimeMinuteOfDay, restored.fixedTimeMinuteOfDay)
-            assertEquals(saved.fixedTimeLabel, restored.fixedTimeLabel)
+            assertEquals(
+                saved.fixedTimes.map { it.copy(id = 0L) },
+                restored.fixedTimes.map { it.copy(id = 0L) },
+            )
             assertEquals(saved.intervalMinutes, restored.intervalMinutes)
             assertEquals(saved.intervalLabel, restored.intervalLabel)
             assertEquals(saved.nextReminderAt, restored.nextReminderAt)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun fixedTimesSupportMultipleEntriesAndLeadMinutes() = runBlocking {
+        val db = database()
+        try {
+            val categoryId = addCategory(db, "健康")
+            val repository = TimeLogRepository(db)
+            repository.saveCategoryPlan(
+                CategoryPlan(
+                    categoryId = categoryId,
+                    fixedTimes = listOf(
+                        FixedTimePlan(minuteOfDay = 20 * 60, label = "复盘", leadMinutes = 5),
+                        FixedTimePlan(minuteOfDay = 9 * 60, label = "晨间", leadMinutes = 15),
+                    ),
+                ),
+                now = 1_000L,
+            )
+
+            val reloaded = repository.getCategoryPlan(categoryId)!!
+            assertEquals(listOf("晨间", "复盘"), reloaded.fixedTimes.map { it.label })
+            assertEquals(listOf(9 * 60, 20 * 60), reloaded.fixedTimes.map { it.minuteOfDay })
+            assertEquals(listOf(15, 5), reloaded.fixedTimes.map { it.leadMinutes })
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun fixedOnlyPlanIsKeptUntilTurnedOff() = runBlocking {
+        val db = database()
+        try {
+            val categoryId = addCategory(db, "阅读")
+            val repository = TimeLogRepository(db)
+            repository.saveCategoryPlan(
+                CategoryPlan(
+                    categoryId = categoryId,
+                    fixedTimes = listOf(FixedTimePlan(minuteOfDay = 21 * 60, label = "读书")),
+                ),
+                now = 1_000L,
+            )
+            assertTrue(repository.getCategoryPlan(categoryId)!!.hasFixedTime)
+
+            repository.saveCategoryPlan(CategoryPlan(categoryId = categoryId), now = 2_000L)
+            assertNull(repository.getCategoryPlan(categoryId))
+            assertTrue(db.fixedTimeDao().getAll().isEmpty())
         } finally {
             db.close()
         }
@@ -149,13 +197,18 @@ class CategoryPlanRepositoryTest {
             addCategory(db, "生活")
             val repository = TimeLogRepository(db)
             repository.saveCategoryPlan(
-                CategoryPlan(categoryId = first, heatmapEnabled = true),
+                CategoryPlan(
+                    categoryId = first,
+                    heatmapEnabled = true,
+                    fixedTimes = listOf(FixedTimePlan(minuteOfDay = 8 * 60, label = "晨间")),
+                ),
                 now = 1_000L,
             )
 
             repository.deleteCategory(first)
             assertNull(repository.getCategoryPlan(first))
             assertTrue(db.categoryPlanDao().getAll().isEmpty())
+            assertTrue(db.fixedTimeDao().getAll().isEmpty())
         } finally {
             db.close()
         }

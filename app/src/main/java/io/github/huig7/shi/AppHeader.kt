@@ -44,10 +44,7 @@ internal fun AppHeader(
     onSelectPage: (Int) -> Unit,
     onSearch: () -> Unit,
     onOpenCategories: () -> Unit,
-    onOpenPlans: () -> Unit,
-    onOpenAnnualReport: () -> Unit,
     onOpenBackup: () -> Unit,
-    onOpenAbout: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     var menuExpanded by remember { mutableStateOf(false) }
@@ -97,31 +94,10 @@ internal fun AppHeader(
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("目标与提醒") },
-                    onClick = {
-                        menuExpanded = false
-                        onOpenPlans()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("年度报告") },
-                    onClick = {
-                        menuExpanded = false
-                        onOpenAnnualReport()
-                    },
-                )
-                DropdownMenuItem(
                     text = { Text("数据备份") },
                     onClick = {
                         menuExpanded = false
                         onOpenBackup()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("关于時") },
-                    onClick = {
-                        menuExpanded = false
-                        onOpenAbout()
                     },
                 )
             }

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.huig7.shi.data.repository.TimeLogRepository
 import io.github.huig7.shi.domain.plan.CategoryPlan
+import io.github.huig7.shi.domain.plan.FixedTimePlan
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +27,14 @@ data class CategoryPlanRow(
     val plan: CategoryPlan?,
 )
 
+/** 编辑弹窗里的一个固定时间草稿；[key] 只用于 Compose 列表和时间选择器定位。 */
+data class FixedTimeDraft(
+    val key: Long,
+    val minuteOfDay: Int,
+    val label: String,
+    val leadMinutes: Int,
+)
+
 /**
  * 正在编辑的配置草稿。
  *
@@ -39,8 +48,7 @@ data class CategoryPlanEditor(
     val goalEnabled: Boolean,
     val goalMinutes: String,
     val fixedEnabled: Boolean,
-    val fixedMinuteOfDay: Int,
-    val fixedLabel: String,
+    val fixedTimes: List<FixedTimeDraft>,
     val intervalEnabled: Boolean,
     val intervalMinutes: String,
     val intervalLabel: String,
@@ -86,6 +94,14 @@ class CategoryPlanViewModel(private val repository: TimeLogRepository) : ViewMod
     fun startEdit(categoryId: Long) {
         val row = uiState.value.rows.firstOrNull { it.categoryId == categoryId } ?: return
         val plan = row.plan
+        val fixed = plan?.fixedTimes.orEmpty().mapIndexed { index, item ->
+            FixedTimeDraft(
+                key = item.id.takeIf { it > 0L } ?: -(index + 1L),
+                minuteOfDay = item.minuteOfDay,
+                label = item.label.orEmpty(),
+                leadMinutes = item.leadMinutes,
+            )
+        }
         editor.value = CategoryPlanEditor(
             categoryId = row.categoryId,
             categoryName = row.name,
@@ -95,8 +111,7 @@ class CategoryPlanViewModel(private val repository: TimeLogRepository) : ViewMod
             goalMinutes = (plan?.dailyGoalMinutes?.takeIf { it > 0 } ?: DEFAULT_GOAL_MINUTES)
                 .toString(),
             fixedEnabled = plan?.hasFixedTime == true,
-            fixedMinuteOfDay = plan?.fixedTimeMinuteOfDay ?: DEFAULT_FIXED_MINUTE,
-            fixedLabel = plan?.fixedTimeLabel.orEmpty(),
+            fixedTimes = fixed,
             intervalEnabled = plan?.hasInterval == true,
             intervalMinutes = (plan?.intervalMinutes?.takeIf { it > 0 } ?: DEFAULT_INTERVAL_MINUTES)
                 .toString(),
@@ -116,13 +131,61 @@ class CategoryPlanViewModel(private val repository: TimeLogRepository) : ViewMod
         it.copy(goalMinutes = value.filter(Char::isDigit), error = null)
     }
 
-    fun setFixedEnabled(enabled: Boolean) = update { it.copy(fixedEnabled = enabled) }
-
-    fun setFixedMinuteOfDay(minute: Int) = update {
-        it.copy(fixedMinuteOfDay = minute.coerceIn(0, MINUTES_PER_DAY - 1))
+    fun setFixedEnabled(enabled: Boolean) = update { draft ->
+        val times = if (enabled && draft.fixedTimes.isEmpty()) {
+            listOf(draft.newFixedTime())
+        } else {
+            draft.fixedTimes
+        }
+        draft.copy(fixedEnabled = enabled, fixedTimes = times, error = null)
     }
 
-    fun setFixedLabel(value: String) = update { it.copy(fixedLabel = value) }
+    fun addFixedTime() = update { draft ->
+        if (draft.fixedTimes.size >= MAX_FIXED_TIMES) {
+            draft.copy(error = "一个分类最多设置 $MAX_FIXED_TIMES 个固定时间")
+        } else {
+            draft.copy(fixedTimes = draft.fixedTimes + draft.newFixedTime(), error = null)
+        }
+    }
+
+    fun removeFixedTime(key: Long) = update { draft ->
+        draft.copy(fixedTimes = draft.fixedTimes.filterNot { it.key == key }, error = null)
+    }
+
+    fun setFixedTimeMinute(key: Long, minute: Int) = update { draft ->
+        draft.copy(
+            fixedTimes = draft.fixedTimes.map { item ->
+                if (item.key == key) {
+                    item.copy(minuteOfDay = minute.coerceIn(0, MINUTES_PER_DAY - 1))
+                } else {
+                    item
+                }
+            },
+            error = null,
+        )
+    }
+
+    fun setFixedTimeLabel(key: Long, value: String) = update { draft ->
+        draft.copy(
+            fixedTimes = draft.fixedTimes.map { item ->
+                if (item.key == key) item.copy(label = value) else item
+            },
+            error = null,
+        )
+    }
+
+    fun setFixedTimeLead(key: Long, minutes: Int) = update { draft ->
+        draft.copy(
+            fixedTimes = draft.fixedTimes.map { item ->
+                if (item.key == key) {
+                    item.copy(leadMinutes = minutes.coerceIn(0, MAX_FIXED_LEAD_MINUTES))
+                } else {
+                    item
+                }
+            },
+            error = null,
+        )
+    }
 
     fun setIntervalEnabled(enabled: Boolean) = update { it.copy(intervalEnabled = enabled) }
 
@@ -136,7 +199,7 @@ class CategoryPlanViewModel(private val repository: TimeLogRepository) : ViewMod
         val draft = editor.value ?: return
         val goalMinutes = draft.goalMinutes.toIntOrNull()
         if (draft.goalEnabled && (goalMinutes == null || goalMinutes !in 1..MAX_GOAL_MINUTES)) {
-            update { it.copy(error = "每日目标请填 1–1440 分钟") }
+            update { it.copy(error = "每日时长请填 1–1440 分钟") }
             return
         }
         val intervalMinutes = draft.intervalMinutes.toIntOrNull()
@@ -147,15 +210,35 @@ class CategoryPlanViewModel(private val repository: TimeLogRepository) : ViewMod
             update { it.copy(error = "间隔请填 5–10080 分钟") }
             return
         }
+        val fixedTimes = if (draft.fixedEnabled) {
+            if (draft.fixedTimes.isEmpty()) {
+                update { it.copy(error = "请至少添加一个固定时间") }
+                return
+            }
+            val duplicate = draft.fixedTimes
+                .groupBy { it.minuteOfDay }
+                .entries
+                .firstOrNull { it.value.size > 1 }
+            if (duplicate != null) {
+                update { it.copy(error = "同一个时间只能设置一次") }
+                return
+            }
+            draft.fixedTimes.sortedBy { it.minuteOfDay }.map { item ->
+                FixedTimePlan(
+                    minuteOfDay = item.minuteOfDay,
+                    label = item.label.trim().ifEmpty { draft.categoryName },
+                    leadMinutes = item.leadMinutes.coerceIn(0, MAX_FIXED_LEAD_MINUTES),
+                )
+            }
+        } else {
+            emptyList()
+        }
 
         val plan = CategoryPlan(
             categoryId = draft.categoryId,
             heatmapEnabled = draft.heatmapEnabled,
             dailyGoalMinutes = if (draft.goalEnabled) goalMinutes ?: 0 else 0,
-            fixedTimeMinuteOfDay = draft.fixedMinuteOfDay.takeIf { draft.fixedEnabled },
-            fixedTimeLabel = draft.fixedLabel.trim().ifEmpty {
-                if (draft.fixedEnabled) draft.categoryName else null
-            },
+            fixedTimes = fixedTimes,
             intervalMinutes = if (draft.intervalEnabled) intervalMinutes else null,
             intervalLabel = draft.intervalLabel.trim().ifEmpty {
                 if (draft.intervalEnabled) draft.categoryName else null
@@ -174,6 +257,21 @@ class CategoryPlanViewModel(private val repository: TimeLogRepository) : ViewMod
         }
     }
 
+    private fun CategoryPlanEditor.newFixedTime(): FixedTimeDraft {
+        val used = fixedTimes.mapTo(HashSet()) { it.minuteOfDay }
+        val preferred = (DEFAULT_FIXED_MINUTE..(22 * 60) step 60)
+            .firstOrNull { it !in used }
+            ?: (0 until MINUTES_PER_DAY step 30).firstOrNull { it !in used }
+            ?: DEFAULT_FIXED_MINUTE
+        val key = (fixedTimes.minOfOrNull { it.key } ?: 0L).coerceAtMost(0L) - 1L
+        return FixedTimeDraft(
+            key = key,
+            minuteOfDay = preferred,
+            label = "",
+            leadMinutes = 0,
+        )
+    }
+
     private fun update(transform: (CategoryPlanEditor) -> CategoryPlanEditor) {
         editor.update { current -> current?.let(transform) }
     }
@@ -186,6 +284,8 @@ class CategoryPlanViewModel(private val repository: TimeLogRepository) : ViewMod
         private const val MAX_GOAL_MINUTES = MINUTES_PER_DAY
         private const val MIN_INTERVAL_MINUTES = 5
         private const val MAX_INTERVAL_MINUTES = 7 * MINUTES_PER_DAY
+        private const val MAX_FIXED_TIMES = 8
+        private const val MAX_FIXED_LEAD_MINUTES = 180
 
         fun factory(repository: TimeLogRepository): ViewModelProvider.Factory = viewModelFactory {
             initializer { CategoryPlanViewModel(repository) }

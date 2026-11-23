@@ -16,6 +16,8 @@ import java.time.ZoneId
  */
 object PlanPromptBuilder {
 
+    private const val MINUTE_MILLIS = 60_000L
+
     fun build(
         plans: List<CategoryPlan>,
         tree: CategoryTree,
@@ -36,6 +38,18 @@ object PlanPromptBuilder {
         }
         val subtree = subtreeTotals(tree, direct)
 
+        // 间隔待办会读取所有历史记录（包括昨天），用来判断「刚记过一笔」。
+        val latestDirect = HashMap<Long, Long>()
+        events.forEach { item ->
+            val event = item.event
+            if (event.startAt > now) return@forEach
+            val endAt = (event.startAt + event.durationMillis).coerceAtMost(now)
+            if (endAt <= 0L) return@forEach
+            latestDirect[event.categoryId] =
+                maxOf(latestDirect[event.categoryId] ?: 0L, endAt)
+        }
+        val latestSubtree = subtreeLatest(tree, latestDirect)
+
         val prompts = ArrayList<PlanPrompt>()
         plans.forEach { plan ->
             val node = tree.find(plan.categoryId) ?: return@forEach
@@ -54,40 +68,71 @@ object PlanPromptBuilder {
                     due = done < plan.dailyGoalMillis,
                     goalDoneMillis = done,
                     goalTargetMillis = plan.dailyGoalMillis,
+                    nowMillis = now,
                 )
             }
 
-            plan.fixedTimeMinuteOfDay?.let { minute ->
+            val fixedTimes = plan.fixedTimes
+                .filter { it.minuteOfDay in 0 until MINUTES_PER_DAY }
+                .sortedBy { it.minuteOfDay }
+            fixedTimes.forEachIndexed { index, fixed ->
+                val minute = fixed.minuteOfDay
                 val fixedAt = today.atTime(LocalTime.of(minute / 60, minute % 60))
                     .atZone(zone).toInstant().toEpochMilli()
+                val nextAt = fixedTimes.getOrNull(index + 1)?.let { next ->
+                    today.atTime(LocalTime.of(next.minuteOfDay / 60, next.minuteOfDay % 60))
+                        .atZone(zone).toInstant().toEpochMilli()
+                } ?: dayEnd
+                // 每个固定时间只认「本时段内」的记录，避免晚上的一次记录把早上所有事项都标成已完成。
                 val fixedDone = clipped.any { item ->
-                    item.event.event.categoryId in subtreeIds && item.end > fixedAt
+                    item.event.event.categoryId in subtreeIds &&
+                        item.end > fixedAt &&
+                        item.start < nextAt
                 }
+                val leadMillis = fixed.leadMinutes.coerceAtLeast(0) * MINUTE_MILLIS
                 prompts += PlanPrompt(
                     categoryId = plan.categoryId,
                     categoryName = name,
                     colorHex = color,
                     kind = PlanPromptKind.FIXED_TIME,
-                    label = plan.fixedTimeLabel?.takeIf { it.isNotBlank() } ?: name,
-                    due = now >= fixedAt && !fixedDone,
+                    label = fixed.label?.takeIf { it.isNotBlank() } ?: name,
+                    due = now >= fixedAt - leadMillis && !fixedDone,
                     fixedTimeMinuteOfDay = minute,
+                    fixedTimeId = fixed.id,
+                    fixedTimeLeadMinutes = fixed.leadMinutes.coerceAtLeast(0),
                     fixedDone = fixedDone,
+                    nowMillis = now,
                 )
             }
 
             if (plan.hasInterval) {
-                // 旧数据没有 nextReminderAt 时按「现在就该做」处理，保存新计划时一定会写入下一次时间。
-                val nextAt = plan.nextReminderAt ?: now
+                // 记录本身就是一次「做过」：只认本次间隔开始之后的记录，避免刚开启计划时
+                // 被很久以前的记录立刻催办；跨天的记录同样参与计算。
+                val interval = plan.intervalMinutes ?: 0
+                val intervalMillis = interval * MINUTE_MILLIS
+                val persistedNext = plan.nextReminderAt
+                val cycleStart = persistedNext?.minus(intervalMillis)
+                val lastRecordEnd = latestSubtree[plan.categoryId] ?: 0L
+                val recentRecordEnd = if (cycleStart != null && lastRecordEnd > cycleStart) {
+                    lastRecordEnd
+                } else {
+                    0L
+                }
+                val computedNext = when {
+                    recentRecordEnd > 0L -> recentRecordEnd + intervalMillis
+                    persistedNext != null -> persistedNext
+                    else -> now
+                }
                 prompts += PlanPrompt(
                     categoryId = plan.categoryId,
                     categoryName = name,
                     colorHex = color,
                     kind = PlanPromptKind.INTERVAL,
                     label = plan.intervalLabel?.takeIf { it.isNotBlank() } ?: name,
-                    due = now >= nextAt,
-                    nextReminderAt = nextAt,
+                    due = now >= computedNext,
+                    nextReminderAt = computedNext,
                     intervalMinutes = plan.intervalMinutes,
-                    lastCompletedAt = plan.lastCompletedAt,
+                    nowMillis = now,
                 )
             }
         }
@@ -95,7 +140,8 @@ object PlanPromptBuilder {
         return prompts.sortedWith(
             compareByDescending<PlanPrompt> { it.due }
                 .thenBy { it.kind.ordinal }
-                .thenBy { it.categoryName },
+                .thenBy { it.categoryName }
+                .thenBy { it.fixedTimeMinuteOfDay ?: 0 },
         )
     }
 
@@ -114,4 +160,22 @@ object PlanPromptBuilder {
         tree.roots.forEach(::walk)
         return totals
     }
+
+    /** 与 [subtreeTotals] 类似，但取子树里最晚的一条记录结束时间。 */
+    private fun subtreeLatest(
+        tree: CategoryTree,
+        direct: Map<Long, Long>,
+    ): Map<Long, Long> {
+        val latest = HashMap<Long, Long>()
+        fun walk(node: CategoryNode): Long {
+            var value = direct[node.category.id] ?: 0L
+            node.children.forEach { child -> value = maxOf(value, walk(child)) }
+            latest[node.category.id] = value
+            return value
+        }
+        tree.roots.forEach(::walk)
+        return latest
+    }
+
+    private const val MINUTES_PER_DAY = 24 * 60
 }

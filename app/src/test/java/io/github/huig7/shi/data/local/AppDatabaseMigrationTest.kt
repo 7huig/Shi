@@ -89,6 +89,25 @@ class AppDatabaseMigrationTest {
         )
     """.trimIndent()
 
+    /** v7–v8 的分类计划表：固定时间是单列，v9 会拆到 fixed_time。 */
+    private val planTableV7ToV8 = """
+        CREATE TABLE IF NOT EXISTS `category_plan` (
+            `categoryId` INTEGER NOT NULL,
+            `heatmapEnabled` INTEGER NOT NULL,
+            `dailyGoalMinutes` INTEGER NOT NULL,
+            `fixedTimeMinuteOfDay` INTEGER NOT NULL,
+            `fixedTimeLabel` TEXT,
+            `intervalMinutes` INTEGER NOT NULL,
+            `intervalLabel` TEXT,
+            `nextReminderAt` INTEGER NOT NULL,
+            `lastCompletedAt` INTEGER NOT NULL,
+            `updatedAt` INTEGER NOT NULL,
+            PRIMARY KEY(`categoryId`),
+            FOREIGN KEY(`categoryId`) REFERENCES `category`(`id`)
+                ON UPDATE NO ACTION ON DELETE CASCADE
+        )
+    """.trimIndent()
+
     private fun createDatabase(name: String, version: Int, seed: (SupportSQLiteDatabase) -> Unit) {
         context.deleteDatabase(name)
         openDatabase(name, version).use(seed)
@@ -154,8 +173,8 @@ class AppDatabaseMigrationTest {
         }
 
     @Test
-    fun fullChain1To8_matchesSchemaAndConvertsEvents() {
-        val name = "migration-1-8"
+    fun fullChain1To11_matchesSchemaAndConvertsEvents() {
+        val name = "migration-1-11"
         createDatabase(name, 1) { db ->
             insertCategory(db, 1, "工作")
             listOf(
@@ -173,11 +192,12 @@ class AppDatabaseMigrationTest {
         }
 
         val db = helper.runMigrationsAndValidate(
-            name, 8, true,
+            name, 11, true,
             AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3,
             AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5,
             AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7,
-            AppDatabase.MIGRATION_7_8,
+            AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9,
+            AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11,
         )
         db.use {
             assertEquals(listOf(1801000L, 1802000L, 1803000L), it.longColumn("SELECT endAt FROM event ORDER BY id"))
@@ -187,6 +207,8 @@ class AppDatabaseMigrationTest {
             assertTrue("uuid 应全部非空", uuids.all { uuid -> uuid.isNotBlank() })
             assertEquals("uuid 应互不相同", 3, uuids.toSet().size)
             assertEquals(0L, it.longColumn("SELECT COUNT(*) FROM category_plan").single())
+            assertEquals(0L, it.longColumn("SELECT COUNT(*) FROM fixed_time").single())
+            assertEquals(listOf(0xFF5A7FA8), it.longColumn("SELECT colorHex FROM category WHERE id = 1"))
         }
     }
 
@@ -221,6 +243,89 @@ class AppDatabaseMigrationTest {
             assertEquals(
                 listOf(0xFF2F6FE4, 0xFF123456),
                 it.longColumn("SELECT colorHex FROM category ORDER BY id"),
+            )
+        }
+    }
+
+    @Test
+    fun migrate8To9_movesFixedTimeToOwnTable() {
+        val name = "migration-8-9"
+        createDatabase(name, 8) { db ->
+            insertCategory(db, 1, "工作")
+            insertCategory(db, 2, "生活")
+            db.execSQL(planTableV7ToV8)
+            db.execSQL(
+                "INSERT INTO category_plan (categoryId, heatmapEnabled, dailyGoalMinutes, " +
+                    "fixedTimeMinuteOfDay, fixedTimeLabel, intervalMinutes, intervalLabel, " +
+                    "nextReminderAt, lastCompletedAt, updatedAt) " +
+                    "VALUES (1, 0, 30, 540, '晨间计划', 60, '喝水', 5000, 4000, 1000)",
+            )
+            db.execSQL(
+                "INSERT INTO category_plan (categoryId, heatmapEnabled, dailyGoalMinutes, " +
+                    "fixedTimeMinuteOfDay, fixedTimeLabel, intervalMinutes, intervalLabel, " +
+                    "nextReminderAt, lastCompletedAt, updatedAt) " +
+                    "VALUES (2, 1, 0, -1, NULL, 0, NULL, 0, 0, 1000)",
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(name, 9, true, AppDatabase.MIGRATION_8_9)
+        db.use {
+            assertEquals(listOf(540L), it.longColumn("SELECT minuteOfDay FROM fixed_time"))
+            assertEquals(listOf("晨间计划"), it.stringColumn("SELECT label FROM fixed_time"))
+            assertEquals(listOf(0L), it.longColumn("SELECT leadMinutes FROM fixed_time"))
+            assertEquals(
+                listOf(1L, 2L),
+                it.longColumn("SELECT categoryId FROM category_plan ORDER BY categoryId"),
+            )
+            assertEquals(
+                listOf(30L, 0L),
+                it.longColumn("SELECT dailyGoalMinutes FROM category_plan ORDER BY categoryId"),
+            )
+        }
+    }
+
+    @Test
+    fun migrate9To10_restoresMutedPaletteAndKeepsCustomColors() {
+        val name = "migration-9-10"
+        val db = helper.createDatabase(name, 9)
+        db.use {
+            insertCategory(it, 1, "工作", colorHex = 0xFF2F6FE4) // 高饱和默认色
+            insertCategory(it, 2, "自定义", colorHex = 0xFF123456) // 用户自选色
+            insertCategory(it, 3, "娱乐", colorHex = 0xFFD32F2F) // 高饱和红色
+        }
+
+        val migrated = helper.runMigrationsAndValidate(name, 10, true, AppDatabase.MIGRATION_9_10)
+        migrated.use {
+            assertEquals(
+                listOf(0xFF5A7FA8, 0xFF123456, 0xFFA8463A),
+                it.longColumn("SELECT colorHex FROM category ORDER BY id"),
+            )
+        }
+    }
+
+    @Test
+    fun migrate10To11_dropsManualCompletionAndKeepsSchedule() {
+        val name = "migration-10-11"
+        val db = helper.createDatabase(name, 10)
+        db.use {
+            insertCategory(it, 1, "工作")
+            it.execSQL(
+                "INSERT INTO category_plan (categoryId, heatmapEnabled, dailyGoalMinutes, " +
+                    "intervalMinutes, intervalLabel, nextReminderAt, lastCompletedAt, updatedAt) " +
+                    "VALUES (1, 0, 30, 60, '喝水', 5000, 4000, 1000)",
+            )
+        }
+
+        val migrated = helper.runMigrationsAndValidate(name, 11, true, AppDatabase.MIGRATION_10_11)
+        migrated.use {
+            assertEquals(listOf(5000L), it.longColumn("SELECT nextReminderAt FROM category_plan"))
+            assertEquals(listOf(60L), it.longColumn("SELECT intervalMinutes FROM category_plan"))
+            assertEquals(
+                0L,
+                it.longColumn(
+                    "SELECT COUNT(*) FROM pragma_table_info('category_plan') " +
+                        "WHERE name = 'lastCompletedAt'",
+                ).single(),
             )
         }
     }

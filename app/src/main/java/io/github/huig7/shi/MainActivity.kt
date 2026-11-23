@@ -59,8 +59,6 @@ import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.huig7.shi.data.repository.TimeLogRepository
-import io.github.huig7.shi.ui.annual.AnnualReportScreen
-import io.github.huig7.shi.ui.annual.AnnualReportViewModel
 import io.github.huig7.shi.ui.category.CategoryManageScreen
 import io.github.huig7.shi.ui.category.CategoryManageViewModel
 import io.github.huig7.shi.ui.data.DataBackupScreen
@@ -69,7 +67,7 @@ import io.github.huig7.shi.ui.home.HomeUiEvent
 import io.github.huig7.shi.ui.home.HomeViewModel
 import io.github.huig7.shi.ui.home.TimelineFabOverlay
 import io.github.huig7.shi.ui.home.TimelinePage
-import io.github.huig7.shi.ui.plan.CategoryPlanScreen
+import io.github.huig7.shi.ui.plan.CategoryPlanEditorDialog
 import io.github.huig7.shi.ui.plan.CategoryPlanViewModel
 import io.github.huig7.shi.ui.record.QuickCategory
 import io.github.huig7.shi.ui.record.QuickRecordResult
@@ -82,7 +80,6 @@ import io.github.huig7.shi.ui.stats.StatisticsScreen
 import io.github.huig7.shi.ui.stats.StatisticsViewModel
 import io.github.huig7.shi.ui.theme.TimeLogTheme
 import io.github.huig7.shi.util.DateTimeFormat
-import java.time.LocalDate
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -101,8 +98,6 @@ class MainActivity : ComponentActivity() {
 private const val OVERLAY_SEARCH = "search"
 private const val OVERLAY_CATEGORIES = "categories"
 private const val OVERLAY_DATA = "data"
-private const val OVERLAY_PLANS = "plans"
-private const val OVERLAY_ANNUAL = "annual"
 
 private const val PREFS_UI = "shi_ui"
 private const val KEY_ONBOARDED = "onboarded_v1"
@@ -128,9 +123,6 @@ private fun TimeLogApp(repository: TimeLogRepository) {
     val statisticsViewModel: StatisticsViewModel = viewModel(
         factory = StatisticsViewModel.factory(repository),
     )
-    val annualReportViewModel: AnnualReportViewModel = viewModel(
-        factory = AnnualReportViewModel.factory(repository),
-    )
     val transferViewModel: DataTransferViewModel = viewModel(
         factory = DataTransferViewModel.factory(repository),
     )
@@ -139,14 +131,16 @@ private fun TimeLogApp(repository: TimeLogRepository) {
     val recordState by recordViewModel.uiState.collectAsStateWithLifecycle()
     val categoryState by categoryViewModel.uiState.collectAsStateWithLifecycle()
     val statisticsState by statisticsViewModel.uiState.collectAsStateWithLifecycle()
-    val annualReportState by annualReportViewModel.uiState.collectAsStateWithLifecycle()
+    val planState by planViewModel.uiState.collectAsStateWithLifecycle()
+    val plansByCategory = remember(planState.rows) {
+        planState.rows.mapNotNull { row -> row.plan?.let { row.categoryId to it } }.toMap()
+    }
 
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var overlay by rememberSaveable { mutableStateOf<String?>(null) }
     var showQuickRecord by rememberSaveable { mutableStateOf(false) }
-    var showAbout by rememberSaveable { mutableStateOf(false) }
     var showOnboarding by rememberSaveable {
         mutableStateOf(!prefs.getBoolean(KEY_ONBOARDED, false))
     }
@@ -274,15 +268,7 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 },
                 onSearch = { overlay = OVERLAY_SEARCH },
                 onOpenCategories = { overlay = OVERLAY_CATEGORIES },
-                onOpenPlans = { overlay = OVERLAY_PLANS },
-                onOpenAnnualReport = {
-                    annualReportViewModel.selectYear(
-                        LocalDate.now(DateTimeFormat.zone()).year,
-                    )
-                    overlay = OVERLAY_ANNUAL
-                },
                 onOpenBackup = { overlay = OVERLAY_DATA },
-                onOpenAbout = { showAbout = true },
             )
 
             HorizontalPager(
@@ -299,7 +285,6 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                         onFillGap = homeViewModel::openFillGap,
                         onNewRecord = homeViewModel::openNewRecord,
                         onPlanRecord = homeViewModel::openPlanRecord,
-                        onPlanComplete = homeViewModel::completePlan,
                         snackbarHostState = snackbarHostState,
                     )
 
@@ -352,7 +337,9 @@ private fun TimeLogApp(repository: TimeLogRepository) {
             BackHandler { overlay = null }
             CategoryManageScreen(
                 state = categoryState,
+                plans = plansByCategory,
                 onBack = { overlay = null },
+                onOpenPlan = { node -> planViewModel.startEdit(node.category.id) },
                 onAddRoot = { categoryViewModel.startCreate(null) },
                 onAddChild = categoryViewModel::startCreate,
                 onEdit = categoryViewModel::startEdit,
@@ -371,6 +358,14 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 onCollapseAll = { categoryViewModel.collapseAll() },
                 onMessageShown = categoryViewModel::consumeMessage,
             )
+            planState.editor?.let { editor ->
+                CategoryPlanEditorDialog(
+                    editor = editor,
+                    viewModel = planViewModel,
+                    onDismiss = planViewModel::dismissEditor,
+                    onSave = planViewModel::save,
+                )
+            }
         }
 
         if (overlay == OVERLAY_DATA) {
@@ -378,28 +373,6 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                 viewModel = transferViewModel,
                 onBack = { overlay = null },
             )
-        }
-
-        if (overlay == OVERLAY_PLANS) {
-            BackHandler { overlay = null }
-            Surface(modifier = Modifier.fillMaxSize()) {
-                CategoryPlanScreen(
-                    viewModel = planViewModel,
-                    onBack = { overlay = null },
-                )
-            }
-        }
-
-        if (overlay == OVERLAY_ANNUAL) {
-            BackHandler { overlay = null }
-            Surface(modifier = Modifier.fillMaxSize()) {
-                AnnualReportScreen(
-                    state = annualReportState,
-                    onClose = { overlay = null },
-                    onOlderYear = annualReportViewModel::goOlderYear,
-                    onNewerYear = annualReportViewModel::goNewerYear,
-                )
-            }
         }
     }
 
@@ -444,13 +417,6 @@ private fun TimeLogApp(repository: TimeLogRepository) {
                     categoryId = categoryId,
                 )
             },
-        )
-    }
-
-    if (showAbout) {
-        AboutDialog(
-            version = appVersion(context),
-            onDismiss = { showAbout = false },
         )
     }
 

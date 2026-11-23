@@ -2,14 +2,14 @@
 
 > 纯本地、无账号、无联网权限的 Android 时间记录器：用时间块和多层环图记录、复盘一天。
 
-[![Release](https://img.shields.io/badge/release-0.4.0-2F5D50)](https://github.com/7huig/Shi/releases/tag/v0.4.0)
+[![Release](https://img.shields.io/badge/release-0.4.1-2F5D50)](https://github.com/7huig/Shi/releases/tag/v0.4.1)
 [![Android CI](https://github.com/7huig/Shi/actions/workflows/android.yml/badge.svg)](https://github.com/7huig/Shi/actions/workflows/android.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![minSdk 29](https://img.shields.io/badge/Android-10%2B-brightgreen.svg)](https://developer.android.com/about/versions/android-10)
 
-**[下载 Shi 0.4.0 APK](https://github.com/7huig/Shi/releases/download/v0.4.0/Shi-0.4.0.apk)** · Android 10+ · 约 3.2 MB · 无广告
+**[下载 Shi 0.4.1 APK](https://github.com/7huig/Shi/releases/download/v0.4.1/Shi-0.4.1.apk)** · Android 10+ · 约 3.2 MB · 无广告
 
-[全部版本与校验值](https://github.com/7huig/Shi/releases) · [English Quick Start](#english-quick-start) · [验收与 FAQ](docs/QA.md) · [目标与提醒设计](docs/plan-reminders.md) · [本轮文案清理清单](docs/copy-cleanup.md)
+[全部版本与校验值](https://github.com/7huig/Shi/releases) · [English Quick Start](#english-quick-start) · [验收与 FAQ](docs/QA.md) · [目标与提醒设计](docs/plan-reminders.md)
 
 > 数据只保存在本机。**卸载或清除应用数据会删除记录，请先导出 JSON 备份。**
 
@@ -21,8 +21,7 @@
 
 - **时间块时间轴**：连续展示记录与安静空白，点空白即可记录；不写「未记录 / 补记」，记录不全不会被反复提醒；重叠记录仍可分别编辑。
 - **统计与下钻**：日／周／月／年／自定义窗口，环图选中、分类联动、层级下钻与环比；不再显示覆盖率百分比。
-- **目标与提醒**：按分类设每日时长目标、固定时间事项与间隔待办；首页只做静态提示，不发系统通知；点完成后间隔重新计时。热力图按分类开启，置顶在時計页并展示最近 24 周。
-- **年度报告**：十个章节的滑动年度回顾——年度称号、电影 / 工作日换算、第一次与最后一次记录、最忙一天、四季与同比；随时从顶栏「⋮ → 年度报告」打开，可在有记录的年份间切换，并分享为文本或 1080×1920 摘要图。
+- **目标与提醒**：在「分类管理」里为每个分类设每日时长、多个固定时间（可设提前提示）与间隔待办；首页只做静态提示，不发系统通知；固定时间和间隔待办都会读取记录自动刷新。热力图按分类开启，置顶在時計页并展示最近 24 周。
 - **轻量记录**：三级分类三栏依次选择、分类展开收起、拖动排序、节气色板、备注搜索与命中总时长；长按「+」可按最近分类和 15/30/45/60 分钟快速记录。
 - **分类调整**：子分类可升为顶层，父分类可移到其他分类下（含子树整体移动，仍限 3 层）；搜索页支持只按分类筛选，所选分类包含整棵子树。
 - **本地备份**：导出 JSON；合并导入识别重复事件，也可覆盖恢复。没有账号、云端同步或网络权限。
@@ -43,9 +42,7 @@
 
 深色模式：[时间轴](docs/screenshots/home-dark.webp) · [统计](docs/screenshots/stats-dark.webp)
 
-年度报告：[分享长图](docs/screenshots/annual-report.webp)
-
-目标与提醒：[首页静态提示](docs/screenshots/home-plan.webp) · [按分类配置](docs/screenshots/plan-reminders.webp) · [最近 24 周热力图](docs/screenshots/category-heatmap.webp)
+目标与提醒：[最近 24 周热力图](docs/screenshots/category-heatmap.webp)
 
 </details>
 
@@ -61,13 +58,13 @@
 
 | 项目 | 版本 / 取值 |
 | --- | --- |
-| 应用版本 | 0.4.0（versionCode 13） |
+| 应用版本 | 0.4.1（versionCode 14） |
 | Android | minSdk 29 · targetSdk 31 · compileSdk 36 |
 | 语言与工具 | Kotlin 2.2.10 · Gradle 9.1.0 · AGP 9.0.1 · JDK 17 |
 | UI | Jetpack Compose（BOM 2025.08.01）· Material 3 |
-| 数据 | Room 2.7.2（数据库 v8）· Coroutines 1.10.2 |
+| 数据 | Room 2.7.2（数据库 v11）· Coroutines 1.10.2 |
 | 架构 | MVVM + 单向数据流，纯函数 domain 层 |
-| 验证 | 190 个 JVM 单元测试（含 Room 迁移、分类计划、24 周热力图、搜索筛选与 JSON 备份编解码）· CI test / lint / assembleDebug / assembleRelease · Pixel 6 API 31 手动验收 |
+| 验证 | 203 个 JVM 单元测试（含 Room 迁移、分类计划、24 周热力图、搜索筛选与 JSON 备份编解码）· CI test / lint / assembleDebug / assembleRelease · Pixel 6 API 31 手动验收 |
 
 ## 从源码构建
 
@@ -115,18 +112,17 @@ githooks/                           # pre-commit：拦截超过 20 KiB 的代码
 - 单条记录删除后可用 Snackbar 撤销；没有回收站，分类删除本身不可撤销（可以选择保留事件并移到父级或其他分类）。
 - 搜索匹配备注，分类筛选按分类树生效；仍不支持日期条件。重叠事件分别累计，总时长可能大于墙钟时长。
 - 未做平板／横屏专属布局；targetSdk 仍为 31，上架 Google Play 前需升级并重新验证。
-- 每个分类最多一条每日目标、一个固定时间事项与一条间隔待办；提醒只在应用内静态展示，不申请通知权限。
+- 每个分类最多一条每日时长、8 个固定时间与一条间隔待办；固定时间可设提前提示，间隔待办的记录跨天也能自动刷新；提醒只在应用内静态展示，不申请通知权限。
 
 ## English Quick Start
 
 **Shi (時)** is a local-only Android time logger with a continuous block timeline and interactive multi-ring statistics. No account, ads, network permission, or cloud sync.
 
-**[Download Shi 0.4.0 APK](https://github.com/7huig/Shi/releases/download/v0.4.0/Shi-0.4.0.apk)** · Android 10+ · about 3.2 MB · [Release notes & checksum](https://github.com/7huig/Shi/releases/tag/v0.4.0)
+**[Download Shi 0.4.1 APK](https://github.com/7huig/Shi/releases/download/v0.4.1/Shi-0.4.1.apk)** · Android 10+ · about 3.2 MB · [Release notes & checksum](https://github.com/7huig/Shi/releases/tag/v0.4.1)
 
 - Record and edit time blocks, tap quiet blanks to record, and search notes with total duration; incomplete days are never labelled or nagged.
 - Explore day / week / month / year / custom windows, select ring segments, and drill into categories.
-- Set per-category daily goals, fixed-time items, and interval todos; static in-app prompts only, and finishing an interval todo resets its next time. Opt-in 24-week category heatmaps sit at the top of the stats page.
-- Open the ten-chapter yearly review any time from the top-right menu; it includes a persona, movie/workday equivalents, first and last records, busiest day, seasons and year-over-year change, and exports as text or a 1080×1920 image.
+- Set per-category daily duration, multiple fixed times (with optional lead-time prompts), and interval todos inside category management; static in-app prompts only, and both fixed times and interval todos refresh from recorded events, across midnight. Opt-in 24-week category heatmaps sit at the top of the stats page.
 - Export JSON before uninstalling or switching devices; local data is erased with app data.
 
 Known limits: three category levels, no cloud sync, phone-first layout, targetSdk 31. Single-record delete can be undone from the snackbar. See [QA / FAQ](docs/QA.md) and [source build instructions](#从源码构建).

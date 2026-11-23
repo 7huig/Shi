@@ -26,11 +26,4 @@ interface CategoryPlanDao {
 
     @Query("DELETE FROM category_plan")
     suspend fun deleteAll()
-
-    /** 完成一次间隔待办：记录完成时间，并把下一次提醒推到 [nextReminderAt]。 */
-    @Query(
-        "UPDATE category_plan SET lastCompletedAt = :now, nextReminderAt = :nextReminderAt, " +
-            "updatedAt = :now WHERE categoryId = :categoryId",
-    )
-    suspend fun markCompleted(categoryId: Long, now: Long, nextReminderAt: Long): Int
 }

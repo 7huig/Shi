@@ -44,13 +44,16 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.huig7.shi.domain.model.CategoryNode
+import io.github.huig7.shi.domain.plan.CategoryPlan
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CategoryManageScreen(
     state: CategoryManageUiState,
+    plans: Map<Long, CategoryPlan>,
     onBack: () -> Unit,
+    onOpenPlan: (CategoryNode) -> Unit,
     onAddRoot: () -> Unit,
     onAddChild: (CategoryNode) -> Unit,
     onEdit: (CategoryNode) -> Unit,
@@ -240,6 +243,8 @@ fun CategoryManageScreen(
                         depth = row.depth,
                         expanded = rowId in state.expandedIds,
                         dragging = dragging,
+                        hasPlan = plans[rowId]?.hasAnySetting == true,
+                        onOpenPlan = { onOpenPlan(row.node) },
                         modifier = if (dragging) {
                             // 占位行直接落到目标位置，避免它自己再播放位移动画导致视觉抖动。
                             Modifier.animateItem(placementSpec = null)

@@ -1,6 +1,5 @@
 package io.github.huig7.shi
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,38 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-
-@Composable
-internal fun AboutDialog(version: String, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("关于時") },
-        text = {
-            Column {
-                Text(
-                    text = "時（Shi）· v$version",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "纯本地时间记录器：用时间块和多层环图记录、复盘一天。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                Text(
-                    text = "无账号 · 无联网权限 · 无广告。数据只保存在本机，卸载前请导出 JSON 备份。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("知道了") }
-        },
-    )
-}
 
 @Composable
 internal fun OnboardingDialog(onDone: () -> Unit) {
@@ -100,8 +67,3 @@ private fun OnboardingLine(number: String, text: String) {
         )
     }
 }
-
-internal fun appVersion(context: Context): String = runCatching {
-    @Suppress("DEPRECATION")
-    context.packageManager.getPackageInfo(context.packageName, 0).versionName
-}.getOrNull() ?: "0.3.0"

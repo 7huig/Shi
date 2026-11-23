@@ -3,6 +3,7 @@ package io.github.huig7.shi.data.transfer
 import io.github.huig7.shi.domain.model.ExportedCategory
 import io.github.huig7.shi.domain.model.ExportedCategoryPlan
 import io.github.huig7.shi.domain.model.ExportedEvent
+import io.github.huig7.shi.domain.model.ExportedFixedTime
 import io.github.huig7.shi.domain.model.LedgerSnapshot
 import org.json.JSONArray
 import org.json.JSONException
@@ -11,15 +12,16 @@ import org.json.JSONObject
 /**
  * 备份文件的 JSON 编解码。
  *
- * 当前写出 { schema: 3, exportedAt, categories: [...], events: [...], plans: [...] }，
- * 并兼容读取 schema 1 / 2（旧文件没有 plans，导入后计划保持未配置）。
+ * 当前写出 { schema: 5, exportedAt, categories: [...], events: [...], plans: [...] }，
+ * 并兼容读取 schema 1 / 2 / 3 / 4（旧文件的计划没有 fixedTimes 数组时读取单个固定时间字段，
+ * 旧版 lastCompletedAt 会忽略）。
  * 只依赖 Android 自带的 org.json，不引入额外依赖。
  *
  * 读取失败统一抛 [IllegalArgumentException]（文案「不是有效的数据文件」），
  * 方便调用方把 message 直接展示给用户；note 缺失 / 为空按 null 处理。
  */
 object TransferJson {
-    private const val SCHEMA_VERSION = 3
+    private const val SCHEMA_VERSION = 5
     private const val MIN_SUPPORTED_SCHEMA = 1
     private const val FALLBACK_COLOR = 0xFF9AA29A
     private const val INVALID_MESSAGE = "不是有效的数据文件"
@@ -60,17 +62,25 @@ object TransferJson {
 
         val plans = JSONArray()
         snapshot.plans.forEach { plan ->
+            val fixedTimes = JSONArray()
+            plan.fixedTimes.forEach { fixed ->
+                fixedTimes.put(
+                    JSONObject().apply {
+                        put("minuteOfDay", fixed.minuteOfDay)
+                        put("label", fixed.label ?: JSONObject.NULL)
+                        put("leadMinutes", fixed.leadMinutes)
+                    },
+                )
+            }
             plans.put(
                 JSONObject().apply {
                     put("categoryId", plan.categoryId)
                     put("heatmapEnabled", plan.heatmapEnabled)
                     put("dailyGoalMinutes", plan.dailyGoalMinutes)
-                    put("fixedTimeMinuteOfDay", plan.fixedTimeMinuteOfDay)
-                    put("fixedTimeLabel", plan.fixedTimeLabel ?: JSONObject.NULL)
+                    put("fixedTimes", fixedTimes)
                     put("intervalMinutes", plan.intervalMinutes)
                     put("intervalLabel", plan.intervalLabel ?: JSONObject.NULL)
                     put("nextReminderAt", plan.nextReminderAt)
-                    put("lastCompletedAt", plan.lastCompletedAt)
                 },
             )
         }
@@ -182,11 +192,16 @@ object TransferJson {
             categoryId = getLong("categoryId"),
             heatmapEnabled = optBoolean("heatmapEnabled", false),
             dailyGoalMinutes = optInt("dailyGoalMinutes", 0),
-            fixedTimeMinuteOfDay = optInt("fixedTimeMinuteOfDay", -1),
-            fixedTimeLabel = if (has("fixedTimeLabel") && !isNull("fixedTimeLabel")) {
-                getString("fixedTimeLabel").trim().ifEmpty { null }
+            fixedTimes = if (has("fixedTimes") && !isNull("fixedTimes")) {
+                getJSONArray("fixedTimes").let { array ->
+                    buildList(array.length()) {
+                        for (index in 0 until array.length()) {
+                            add(array.getJSONObject(index).toFixedTime())
+                        }
+                    }
+                }
             } else {
-                null
+                legacyFixedTimes()
             },
             intervalMinutes = optInt("intervalMinutes", 0),
             intervalLabel = if (has("intervalLabel") && !isNull("intervalLabel")) {
@@ -195,8 +210,33 @@ object TransferJson {
                 null
             },
             nextReminderAt = optLong("nextReminderAt", 0L),
-            lastCompletedAt = optLong("lastCompletedAt", 0L),
         )
+    }
+
+    private fun JSONObject.toFixedTime(): ExportedFixedTime {
+        val minute = optInt("minuteOfDay", -1)
+        if (minute !in 0 until MINUTES_PER_DAY) invalid()
+        return ExportedFixedTime(
+            minuteOfDay = minute,
+            label = if (has("label") && !isNull("label")) {
+                getString("label").trim().ifEmpty { null }
+            } else {
+                null
+            },
+            leadMinutes = optInt("leadMinutes", 0).coerceIn(0, MAX_FIXED_LEAD_MINUTES),
+        )
+    }
+
+    /** schema 3 及更早的备份只有一个固定时间字段；读成一条提前 0 分钟的记录。 */
+    private fun JSONObject.legacyFixedTimes(): List<ExportedFixedTime> {
+        val minute = optInt("fixedTimeMinuteOfDay", -1)
+        if (minute !in 0 until MINUTES_PER_DAY) return emptyList()
+        val label = if (has("fixedTimeLabel") && !isNull("fixedTimeLabel")) {
+            getString("fixedTimeLabel").trim().ifEmpty { null }
+        } else {
+            null
+        }
+        return listOf(ExportedFixedTime(minuteOfDay = minute, label = label, leadMinutes = 0))
     }
 
     /** 备注缺失、为 JSON null 或空白时都按 null 处理，与仓库保存时的清洗规则一致。 */
@@ -206,4 +246,7 @@ object TransferJson {
     }
 
     private fun invalid(): Nothing = throw IllegalArgumentException(INVALID_MESSAGE)
+
+    private const val MINUTES_PER_DAY = 24 * 60
+    private const val MAX_FIXED_LEAD_MINUTES = 180
 }

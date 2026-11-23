@@ -2,26 +2,25 @@ package io.github.huig7.shi.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/** 更明亮、高饱和的纸面与青绿主色；保留暖纸底，避免变成冷冰冰的仪表盘。 */
-val Paper = Color(0xFFFFFBF3)
-val PaperDark = Color(0xFF0E1513)
-val Ink = Color(0xFF13201C)
+val Paper = Color(0xFFFBFAF7)
+val PaperDark = Color(0xFF121412)
+val Ink = Color(0xFF1E211F)
 
-/** 次要文字：在纸色上保持足够对比度，同时比主文字轻一档。 */
-val InkMuted = Color(0xFF5A6761)
-val Pine = Color(0xFF00796B)
-val PineSoft = Color(0xFFB2F2E5)
-val Clay = Color(0xFFF25C54)
-val Hairline = Color(0xFFE7DDCB)
+/** 次要文字：在纸色上 5.15:1，能覆盖 11sp 辅助字的最低对比度要求。 */
+val InkMuted = Color(0xFF666C67)
+val Pine = Color(0xFF2F5D50)
+val PineSoft = Color(0xFFE6EFEA)
+val Clay = Color(0xFFB4654A)
+val Hairline = Color(0xFFE4E1DA)
 
 /** 分类用时环比：增加为红、减少为绿（用户指定）。深色模式用同族的浅色版本。 */
-val RiseRed = Color(0xFFD32F2F)
+val RiseRed = Color(0xFFC0392B)
 val FallGreen = Color(0xFF2E7D32)
-val RiseRedDark = Color(0xFFFF8A80)
-val FallGreenDark = Color(0xFF69F0AE)
+val RiseRedDark = Color(0xFFF08A80)
+val FallGreenDark = Color(0xFF7FD1A3)
 
-val NightSurface = Color(0xFF18221F)
-val NightInk = Color(0xFFE6F4EF)
-val NightMuted = Color(0xFFA6BCB5)
-val NightPine = Color(0xFF4DD9C5)
-val NightHairline = Color(0xFF2B3A35)
+val NightSurface = Color(0xFF1A1D1A)
+val NightInk = Color(0xFFE7EAE5)
+val NightMuted = Color(0xFFA1A8A1)
+val NightPine = Color(0xFFA8D5C2)
+val NightHairline = Color(0xFF313631)

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +61,8 @@ internal fun CategoryRow(
     depth: Int,
     expanded: Boolean,
     dragging: Boolean,
+    hasPlan: Boolean,
+    onOpenPlan: () -> Unit,
     modifier: Modifier = Modifier,
     onAddChild: (CategoryNode) -> Unit,
     onEdit: (CategoryNode) -> Unit,
@@ -147,6 +150,21 @@ internal fun CategoryRow(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            IconButton(
+                onClick = onOpenPlan,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Notifications,
+                    contentDescription = "目标与提醒",
+                    modifier = Modifier.size(19.dp),
+                    tint = if (hasPlan) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
             IconButton(onClick = { onDelete(node) }) {
                 Icon(

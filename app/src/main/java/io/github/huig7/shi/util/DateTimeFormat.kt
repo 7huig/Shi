@@ -25,6 +25,21 @@ object DateTimeFormat {
 
     fun time(epochMillis: Long): String = toLocalDateTime(epochMillis).format(timeFormatter)
 
+    /**
+     * 间隔待办的「下一次」：今天只给时间，明天加「明天」，更远的日子带月日。
+     * 跨天也能看出是哪一天，而不是只显示一个可能被误读成今天的时间。
+     */
+    fun relativeDayTime(epochMillis: Long, now: Long = System.currentTimeMillis()): String {
+        val target = toLocalDateTime(epochMillis)
+        val today = toLocalDateTime(now).toLocalDate()
+        val clock = target.format(timeFormatter)
+        return when (target.toLocalDate()) {
+            today -> clock
+            today.plusDays(1) -> "明天 $clock"
+            else -> monthDay(target.toLocalDate()) + " " + clock
+        }
+    }
+
     fun clock(time: LocalTime): String = time.format(timeFormatter)
 
     fun dateWithWeekday(date: LocalDate): String = date.format(monthDayFormatter)

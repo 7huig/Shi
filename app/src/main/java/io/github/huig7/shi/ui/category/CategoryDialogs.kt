@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.huig7.shi.domain.model.CategoryNode
@@ -54,6 +55,8 @@ internal fun CategoryEditorDialog(
     onSave: () -> Unit,
 ) {
     var showParentPicker by rememberSaveable(editor.id) { mutableStateOf(false) }
+    // 颜色不是每次都要改；默认收起，把弹窗高度留给名称与父分类。
+    var showColors by rememberSaveable(editor.id) { mutableStateOf(false) }
     val parentName = editor.parentId?.let { tree.find(it)?.category?.name }
     val editing = editor.id != null
 
@@ -114,16 +117,35 @@ internal fun CategoryEditorDialog(
                     singleLine = true,
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "颜色",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                SolarTermPalette(
-                    selectedHex = editor.colorHex,
-                    onSelect = onColorChange,
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showColors = !showColors }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "颜色",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    CategoryDot(colorHex = editor.colorHex, size = 14.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.ArrowDropDown,
+                        contentDescription = if (showColors) "收起颜色" else "展开颜色",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.rotate(if (showColors) 180f else 0f),
+                    )
+                }
+                if (showColors) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    SolarTermPalette(
+                        selectedHex = editor.colorHex,
+                        onSelect = onColorChange,
+                    )
+                }
             }
         },
         confirmButton = {

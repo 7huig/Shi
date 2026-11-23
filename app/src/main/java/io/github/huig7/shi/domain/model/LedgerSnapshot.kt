@@ -41,18 +41,23 @@ data class ExportedEvent(
  * 分类计划的导出形态。
  *
  * 保存用户填写的参数与下一次提醒时间，而不只导出开关；这样恢复到另一台设备后，
- * 间隔待办不会从头开始，完成历史也能保留。
+ * 间隔待办不会从头开始。schema 4 起固定时间可以有多条；schema 5 去掉手动完成历史。
  */
 data class ExportedCategoryPlan(
     val categoryId: Long,
     val heatmapEnabled: Boolean,
     val dailyGoalMinutes: Int,
-    val fixedTimeMinuteOfDay: Int,
-    val fixedTimeLabel: String?,
+    val fixedTimes: List<ExportedFixedTime> = emptyList(),
     val intervalMinutes: Int,
     val intervalLabel: String?,
     val nextReminderAt: Long,
-    val lastCompletedAt: Long,
+)
+
+/** 固定时间的导出形态；id 由导入方重新生成，不需要跨设备保留。 */
+data class ExportedFixedTime(
+    val minuteOfDay: Int,
+    val label: String?,
+    val leadMinutes: Int = 0,
 )
 
 enum class ImportMode { MERGE, REPLACE }

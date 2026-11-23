@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -51,7 +50,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.huig7.shi.ui.common.DatePickerSheet
 import io.github.huig7.shi.util.DateTimeFormat
 import java.time.LocalDate
@@ -69,14 +67,12 @@ fun TimelinePage(
     onFillGap: (Long, Long) -> Unit,
     onNewRecord: () -> Unit,
     onPlanRecord: (Long) -> Unit,
-    onPlanComplete: (Long) -> Unit,
     snackbarHostState: SnackbarHostState,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         PlanPromptStrip(
             prompts = state.planPrompts,
             onRecord = onPlanRecord,
-            onComplete = onPlanComplete,
         )
         Box(modifier = Modifier.weight(1f)) {
             when {
@@ -255,10 +251,6 @@ private fun indexOfDay(days: List<HomeDay>, date: LocalDate): Int? {
 
 @Composable
 private fun DayHeader(day: HomeDay, onDateClick: () -> Unit) {
-    val recorded = day.segments.filterNot { it.isUnrecorded }.sumOf { it.endAt - it.startAt }
-    // 只说自己记下了多少，不统计空白时长；记录不完整不是一种需要被纠正的错误。
-    val summary = if (recorded > 0L) "已记录 " + DateTimeFormat.durationText(recorded) else null
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -278,22 +270,6 @@ private fun DayHeader(day: HomeDay, onDateClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Normal,
                 modifier = Modifier.padding(top = 4.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            Icon(
-                imageVector = Icons.Rounded.DateRange,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.size(15.dp),
-            )
-        }
-        if (summary != null) {
-            Spacer(Modifier.height(5.dp))
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 14.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                maxLines = 1,
             )
         }
         Spacer(Modifier.height(5.dp))

@@ -29,7 +29,7 @@ import kotlinx.coroutines.flow.map
 class TimeLogRepository(private val database: AppDatabase) {
     private val categoryDao = database.categoryDao()
     private val eventDao = database.eventDao()
-    private val plans = CategoryPlanStore(database.categoryPlanDao())
+    private val plans = CategoryPlanStore(database)
 
     val categories: Flow<List<Category>> =
         categoryDao.observeAll().map { list -> list.map { it.toDomain() } }
@@ -59,12 +59,6 @@ class TimeLogRepository(private val database: AppDatabase) {
         plan: CategoryPlan,
         now: Long = System.currentTimeMillis(),
     ): CategoryPlan = plans.save(plan, now)
-
-    /** 完成一次间隔待办，返回刷新后的下一次提醒时间；没有启用间隔待办时返回 null。 */
-    suspend fun completeCategoryPlan(
-        categoryId: Long,
-        now: Long = System.currentTimeMillis(),
-    ): Long? = plans.complete(categoryId, now)
 
     /**
      * 按备注搜索，并可选按分类筛选（含该分类的整棵子树）。
